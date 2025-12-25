@@ -12,6 +12,7 @@ dependencies = [
     "ipykernel>=7.1.0",
     "matplotlib>=3.10.7",
     "napari>=0.6.5",
+    "pyqt5>=5.15.11",
 ]
 
 [build-system]
