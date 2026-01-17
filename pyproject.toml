@@ -9,6 +9,7 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "imagecodecs>=2025.3.30",
     "ipykernel>=7.1.0",
     "matplotlib>=3.10.7",
     "napari>=0.6.5",
