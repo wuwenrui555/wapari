@@ -1,6 +1,6 @@
 [project]
 name = "wapari"
-version = "0.1.0"
+version = "0.1.1"
 description = "WapaRi: utils for napari viewer from Wenrui XD"
 authors = [
     {name = "Wenrui Wu",email = "wuwenruiwwr@outlook.com"},
