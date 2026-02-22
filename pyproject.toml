@@ -13,7 +13,10 @@ dependencies = [
     "ipykernel>=7.1.0",
     "matplotlib>=3.10.7",
     "napari>=0.6.5",
+    "napari-ome-zarr>=0.6.1",
+    "ome-zarr>=0.8.3",
     "pyqt5>=5.15.11",
+    "zarr>=3",
 ]
 
 [build-system]
