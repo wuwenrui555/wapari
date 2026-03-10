@@ -14,3 +14,7 @@ mamba activate $env_name
 
 pip install git+https://github.com/wuwenrui555/wapari.git@dev
 ```
+
+## References
+
+- [napari training course](https://github.com/sofroniewn/napari-training-course/tree/master/lessons)
