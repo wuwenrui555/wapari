@@ -7,6 +7,44 @@ The repository has two layers:
 - **`src/wapari/`** — a plain Python library. Readers, converters and panel knowledge you would use from a notebook, with or without an agent.
 - **`skills/`** — [Agent Skills](https://agentskills.dev): one directory per skill, each with a `SKILL.md`. These drive a live napari session, ask you what you want to see, and decide what to put on screen.
 
+## What you can ask for
+
+Skills match on intent, not on wording, and the language you ask in does not matter. The examples below are what these skills are built to handle.
+
+**Open a viewer you can talk to.**
+
+> Open a napari window I can drive by talking to you.
+
+Starts a napari session the agent can control, and tells you which mechanism it used. From here every request below happens in that same window, and you can also reach in and use the GUI yourself at any time.
+
+**Open a slide.**
+
+> Open `~/data/20251001_Xenium097.qptiff`.
+
+Loads the pyramid lazily, so a 53 GB slide appears in seconds and nothing is read into memory until you look at it. Only one channel goes up at first, so you see tissue rather than a wall of colour. The agent then reports the panel grouped by what the markers are for, and asks what you want to do.
+
+**Put up markers for a purpose, not by name.**
+
+> I'm going to segment this — put up what I need.
+>
+> Show me the T cell markers.
+
+Segmentation means DAPI plus membrane markers; annotation means the lineage-specific ones. Ask for a purpose and the agent picks; ask for specific markers and it adds exactly those.
+
+**Ask what is in a file.**
+
+> What channels are in this qptiff?
+>
+> Is there a macrophage marker in this panel?
+
+Answered from the file's own metadata, without opening a viewer.
+
+**Convert for repeated access.**
+
+> Convert this qptiff to OME-Zarr.
+
+Streams every pyramid level into a chunked OME-Zarr, preserves channel names, pixel size and the original vendor metadata, and verifies the result pixel-by-pixel before saying it worked. Worth doing when you will read the data many times; not worth doing to look at a slide once.
+
 ## Where does a new file go?
 
 Two tests settle it. Both must agree; when they disagree, the work is probably two things that should be split.

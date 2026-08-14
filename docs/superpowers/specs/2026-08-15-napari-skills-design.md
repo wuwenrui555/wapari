@@ -27,13 +27,16 @@ Three skills with distinct roles. They are not siblings: skill 1 is infrastructu
 
 ### 1. `opening-napari-session`
 
-Guarantees an agent-controllable napari session and documents the two ways to get one.
+Guarantees an agent-controllable napari session. Two mechanisms, and the ordering matters: **the bridge is the floor, MCP is the improvement.**
 
-- **Preferred: `napari-mcp`.** Maintained, standard, 16 tools, and its napari plugin can attach to a viewer the user opened by hand.
-- **Fallback: the command bridge.** MCP servers load only at session start, so a session that began before registration — or in another directory — has no napari tools. The bridge covers that gap: a napari process with a socket server whose Qt timer drains queued code on the main thread.
-- Decision rule in `SKILL.md`: check whether MCP napari tools are present; if not, start the bridge and tell the user why.
+- **The command bridge** — `scripts/napari_server.py` plus `scripts/nsend.py` — is what makes these skills self-sufficient. It is a napari process with a socket server whose Qt timer drains queued code on the main thread, driven by any agent that can run a shell command. That includes agents with no MCP support at all (Codex reads `AGENTS.md` and runs CLIs; this is the same vendor-neutral stance `SpatialOmicsAgentSkill` takes). It also covers the case that keeps recurring in practice: an MCP server registered after the session started.
+- **`napari-mcp`** is preferred whenever its tools are present. It is maintained, it is the standard mechanism, it exposes 16 typed tools instead of one code channel, and its napari plugin can attach to a viewer the user opened by hand.
 
-Scripts: `scripts/napari_server.py`, `scripts/nsend.py` (both validated against a 53 GB qptiff on 2026-08-15).
+The decision rule in `SKILL.md` is one line: use the MCP tools if the session has them, otherwise run the bridge script. Nothing else branches.
+
+The bridge executes code it receives, so it listens on a **Unix domain socket with 0600 permissions** in a user-private runtime directory, not on a TCP port. There is no port for another local process to connect to, and access is enforced by the filesystem.
+
+Its cost is deliberately small: about 60 lines against napari's most stable public surface (`Viewer`, `napari.run()`), qtpy's `QTimer` and the standard library. It touches no napari internals, so version churn should not reach it.
 
 ### 2. `viewing-multiplex-image`
 
