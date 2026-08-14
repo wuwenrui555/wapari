@@ -72,6 +72,33 @@ def test_contrast_limits_come_from_the_smallest_level(qptiff):
     assert high == pytest.approx(np.percentile(smallest, 99.5))
 
 
+def test_opens_an_ome_tiff(tmp_path):
+    """Both the README and the viewing skill advertise OME-TIFF, and
+    tifffile hands back TiffFrame objects for its pages 1..N, which carry
+    no description at all."""
+    import tifffile
+
+    data = np.arange(2 * 8 * 6, dtype=np.uint16).reshape(2, 8, 6)
+    path = tmp_path / "panel.ome.tif"
+    tifffile.imwrite(
+        path,
+        data,
+        metadata={"axes": "CYX", "Channel": {"Name": ["DAPI", "CD8"]}},
+    )
+    image = open_image(path)
+    assert image.channel_names == ["DAPI", "CD8"]
+    np.testing.assert_array_equal(np.asarray(image.pyramid("CD8")[0]), data[1])
+
+
+def test_a_plain_tiff_without_metadata_still_opens(tmp_path):
+    """A description that is not XML must not crash the reader."""
+    import tifffile
+
+    path = tmp_path / "plain.tif"
+    tifffile.imwrite(path, np.zeros((8, 6), dtype=np.uint16), description="hello")
+    assert open_image(path).channel_names == ["channel_0"]
+
+
 def test_an_image_can_be_closed_and_used_as_a_context_manager(qptiff):
     """The qptiff stays open so its levels can be read lazily, so there
     has to be a way to let go of it."""
@@ -80,6 +107,27 @@ def test_an_image_can_be_closed_and_used_as_a_context_manager(qptiff):
     image = open_image(qptiff[0])
     image.close()
     image.close()  # closing twice must not raise
+
+
+def _bare_zarr(path, channels=None, shape=(3, 8, 8)):
+    root = zarr.open_group(str(path), mode="w", zarr_format=2)
+    root.create_array("0", shape=shape, chunks=shape, dtype="uint16")
+    root.attrs["multiscales"] = [{"datasets": [{"path": "0"}]}]
+    if channels is not None:
+        root.attrs["omero"] = {"channels": channels}
+    return path
+
+
+def test_ome_zarr_without_channel_labels_still_opens(tmp_path):
+    """`label` is optional in NGFF omero; bioformats2raw omits it."""
+    path = _bare_zarr(tmp_path / "nolabel.ome.zarr", channels=[{}, {}, {}])
+    assert open_image(path).channel_names == ["channel_0", "channel_1", "channel_2"]
+
+
+def test_ome_zarr_with_too_few_labels_does_not_truncate_the_panel(tmp_path):
+    """Reporting a 3-channel image as 1 channel hides two of them."""
+    path = _bare_zarr(tmp_path / "short.ome.zarr", channels=[{"label": "DAPI"}])
+    assert len(open_image(path).channel_names) == 3
 
 
 def test_contrast_limits_never_collapse_to_a_single_value(tmp_path):

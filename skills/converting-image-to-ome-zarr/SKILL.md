@@ -19,7 +19,7 @@ A 53 GB, 45-channel, six-level slide took 3.6 minutes and produced 51 GB. Run it
 
 A qptiff already reads lazily, and `viewing-multiplex-image` opens one in seconds. So convert only when the copy earns its disk:
 
-- The data will be read **repeatedly and randomly** — cropping many regions, iterating over patches, feeding a pipeline. Chunked zarr beats strip-oriented TIFF badly here.
+- The data will be read **repeatedly and randomly** — cropping many regions, iterating over patches, feeding a pipeline. Chunked zarr is much faster here.
 - It will be **written back to**, or cropped to disk alongside its metadata.
 - It will be **shared or moved**, where a directory of chunks copies and resumes better than one huge file.
 
@@ -27,7 +27,7 @@ Do **not** convert to look at a slide once, and do not convert because zarr soun
 
 ## What is preserved
 
-Nothing is silently dropped, which is what makes the copy safe to treat as the working original:
+What the copy carries over:
 
 - Every pyramid level, copied as-is. No downsampling is recomputed, so level *n* is bit-identical to the source's level *n*.
 - Channel names, read from the qptiff's per-page `<Biomarker>` XML rather than from a filename or a panel list.
@@ -38,9 +38,9 @@ Nothing is silently dropped, which is what makes the copy safe to treat as the w
 
 ## Always verify, and say that you did
 
-`verify=True` is the default: after writing, the copy is compared to the source pixel by pixel, at random windows on every level, and a mismatch raises. Leave it on.
+`verify=True` is the default: after writing, the copy is compared to the source pixel by pixel and a mismatch raises. Leave it on.
 
-The reason is specific and worth repeating to the user: in this ecosystem a corrupted write **looks exactly like a good one**. On the wrong tifffile version an OME-TIFF writer produced a file whose size, structure, channel names and pixel size were all correct and whose pixels were wrong; the progress bar completed, nothing raised. Only comparing pixels finds that. A conversion reported as successful without verification is a claim nobody has checked.
+In this ecosystem a corrupted write **looks exactly like a good one**. On the wrong tifffile version an OME-TIFF writer produced a file whose size, structure, channel names and pixel size were all correct and whose pixels were wrong; the progress bar completed, nothing raised. Only comparing pixels finds that.
 
 ## Reading the result
 

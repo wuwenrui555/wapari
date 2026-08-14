@@ -5,9 +5,7 @@ description: Use when the user wants to look at a multiplexed slide (CODEX / Ako
 
 # Viewing a multiplexed image
 
-A CODEX slide is tens of gigabytes and carries forty or more markers. Two things follow, and they shape everything below: **never read it eagerly**, and **never put the whole panel on screen**. Forty additive layers are a wall of colour that answers no question.
-
-The order is: open lazily, show one channel, report the panel by what its markers are *for*, then ask what the user is doing and add the markers for that.
+A CODEX slide is tens of gigabytes and carries forty or more markers. Two things follow: **never read it eagerly**, and **never put the whole panel on screen**. Forty additive layers are a wall of colour that answers no question.
 
 ## 1. Get a viewer
 

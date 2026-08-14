@@ -11,7 +11,7 @@ Every interactive skill in this repository needs the same thing first: a napari 
 
 **Always create the viewer with the bridge, and only ever drive one you created.** Do not try to reach a napari window the user opened by hand — that is the case that needs an in-process plugin, and refusing it keeps this skill to a single code path that works in any agent with a shell.
 
-The consequence is worth stating to the user once: a window they opened themselves is theirs, and this skill will start a separate one it owns. They can still click, pan and draw in the one it started; both of you are looking at the same viewer.
+Tell the user once: a window they opened themselves is theirs, and this skill will start a separate one it owns. They can still click, pan and draw in the one it started; both of you are looking at the same viewer.
 
 If the session happens to expose `napari-mcp` tools, they are a fine way to drive that same viewer, and their typed arguments read better than a code channel. They are an alternative, not a prerequisite: MCP servers load only when a session starts, so their absence is normal and never a reason to stop.
 

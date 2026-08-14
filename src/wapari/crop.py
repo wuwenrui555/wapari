@@ -1,9 +1,8 @@
 """Cut regions out of an image using a label mask.
 
 The mask is what a napari Labels layer holds: zero is background and each
-positive integer is one region. Two ways to cut are useful and they are
-not interchangeable — a bounding box keeps a rectangle of context, while
-a polygon crop keeps only what was drawn and replaces the rest.
+positive integer is one region. The two modes are not interchangeable;
+see ``mode`` below.
 """
 
 import pathlib

@@ -7,8 +7,7 @@ that second click silently lands on whatever was selected before. QuPath
 does not work this way, and the mismatch is a standing napari proposal
 (napari/napari#7532).
 
-Hiding a layer deliberately changes nothing: it says what you no longer
-want to look at, not what you now want to work on.
+Hiding a layer leaves the selection alone.
 """
 
 _CONNECTED: dict[int, list] = {}
