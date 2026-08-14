@@ -24,6 +24,20 @@ Cmd+Z works inside a Labels layer, where paint, fill and erase keep a history. I
 
 Consequences worth passing to the user: export annotations to geojson often enough that a mistake costs one shape rather than an afternoon, and prefer a Labels layer when the annotation is really a painted region, since that buys undo back.
 
+## Delete does nothing to a polygon drawn in a Labels layer
+
+A Labels layer has a polygon tool, and it looks like the one in a Shapes layer, but it commits **pixels**. There is no shape object afterwards, so selecting it and pressing Delete does nothing at all — Delete only removes shapes from a Shapes or Points layer.
+
+Undo the pixels instead. Cmd+Z works here, unlike in a Shapes layer: paint, fill and polygon operations on a Labels layer keep a history. The other ways are the fill tool with the label set to 0, or, for a whole label at once:
+
+```python
+layer = viewer.layers["Labels"]
+layer.data[layer.data == label] = 0
+layer.refresh()
+```
+
+The two layer types answer opposite questions here, which is what makes it confusing: **Shapes gives you deletable objects but no undo; Labels gives you undo but nothing to delete.**
+
 ## Select versus direct select
 
 In a Shapes layer, `S` (select) shows a transform box whose corner handles scale the whole shape, while `D` (direct select) edits a single vertex. "I dragged a corner and only that corner moved" means mode `D` was active; the rectangle is now an arbitrary quadrilateral.
