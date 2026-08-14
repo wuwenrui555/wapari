@@ -47,7 +47,7 @@ for _ in range(90):
     finally:
         probe.close()
 else:
-    print("napari did not come up")
+    sys.exit("napari did not come up")
 PY
 ```
 

@@ -49,10 +49,24 @@ class Image:
         self._handle = handle
 
     def close(self) -> None:
-        """Release the underlying file. Reading levels afterwards fails."""
+        """Release the underlying file.
+
+        Anything already handed to a viewer stops working: a napari layer
+        holding these levels reads them lazily, so it fails on the next
+        pan or zoom, far from this call and with tifffile's own bare
+        assertion. Close only when nothing is displaying the image.
+        """
         if self._handle is not None:
             self._handle.close()
             self._handle = None
+        self._closed = True
+
+    def _check_open(self) -> None:
+        if getattr(self, "_closed", False):
+            raise RuntimeError(
+                f"{self.path.name} is closed; reopen it with open_image(). "
+                "Layers created from it before the close are also dead."
+            )
 
     def __enter__(self) -> "Image":
         return self
@@ -71,39 +85,92 @@ class Image:
         """The (C, Y, X) shape of every pyramid level."""
         return [tuple(level.shape) for level in self.levels]
 
-    def channel_index(self, channel: str) -> int:
-        """Return the index of a channel, naming the panel if it is absent."""
-        try:
-            return self.channel_names.index(channel)
-        except ValueError:
-            raise KeyError(
-                f"no channel {channel!r} in {self.path.name}; the panel is "
-                f"{', '.join(self.channel_names)}"
-            ) from None
+    def channel_index(self, channel: str | int) -> int:
+        """Return the index of a channel, naming the panel if it is absent.
 
-    def pyramid(self, channel: str, chunk: int = 2048) -> list[da.Array]:
+        An integer is a position, which is the only way to reach a
+        channel in a panel that repeats a name. Otherwise an exact name
+        wins, and failing that the name is matched the way
+        :func:`wapari.markers.normalize` matches, so ``PDL1`` finds a
+        channel the panel spells ``PD-L1`` and ``FAP`` finds
+        ``FAP-biotin``.
+        """
+        if isinstance(channel, int | np.integer):
+            position = int(channel)
+            if not 0 <= position < len(self.channel_names):
+                raise KeyError(
+                    f"position {position} is outside {self.path.name}, which "
+                    f"has {len(self.channel_names)} channels"
+                )
+            return position
+
+        from wapari.markers import normalize
+
+        exact = [i for i, name in enumerate(self.channel_names) if name == channel]
+        wanted = normalize(channel)
+        matches = exact or [
+            i for i, name in enumerate(self.channel_names) if normalize(name) == wanted
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            # Multi-cycle panels repeat a nuclear stain. Taking the first
+            # silently is how you display cycle 1 believing it is cycle 3.
+            raise KeyError(
+                f"{channel!r} appears {len(matches)} times in "
+                f"{self.path.name}, at positions "
+                f"{', '.join(str(i) for i in matches)}; index it by position"
+            )
+        raise KeyError(
+            f"no channel {channel!r} in {self.path.name}; the panel is "
+            f"{', '.join(self.channel_names)}"
+        )
+
+    def pyramid(self, channel: str | int, chunk: int = 2048) -> list[da.Array]:
         """Return one lazy 2D array per level for a single channel.
 
         The result is what napari's ``multiscale=True`` expects: it reads
         only the level and tiles currently on screen.
         """
+        self._check_open()
         index = self.channel_index(channel)
         return [
             da.from_array(level, chunks=(1, chunk, chunk))[index]
+            if level.ndim == 3
+            else da.from_array(level, chunks=(chunk, chunk))
             for level in self.levels
         ]
 
-    def contrast_limits(self, channel: str) -> tuple[float, float]:
+    def _sample(self, channel: str | int, max_pixels: int) -> np.ndarray:
+        """Read a bounded sample of a channel's smallest level."""
+        self._check_open()
+        index = self.channel_index(channel)
+        smallest = self.levels[-1]
+        height, width = smallest.shape[-2:]
+        step = max(1, int(np.ceil(np.sqrt(height * width / max_pixels))))
+        if smallest.ndim == 3:
+            return np.asarray(smallest[index, ::step, ::step])
+        return np.asarray(smallest[::step, ::step])
+
+    def sample_size(self, channel: str | int, max_pixels: int = 4_000_000) -> int:
+        """How many pixels :meth:`contrast_limits` would look at."""
+        return int(self._sample(channel, max_pixels).size)
+
+    def contrast_limits(
+        self, channel: str | int, max_pixels: int = 4_000_000
+    ) -> tuple[float, float]:
         """Suggest display limits for a channel.
 
         Measured on the smallest pyramid level, since a percentile over
-        level 0 would read every pixel. The upper limit is nudged
-        above the lower one for a blank channel, whose percentile is 0
-        and which napari would otherwise refuse to render.
+        level 0 would read every pixel. A slide with no pyramid makes
+        that level the full plane, so at most ``max_pixels`` of it are
+        sorted; a strided read still touches every chunk it crosses, so
+        this bounds memory and the sort, not I/O. The upper limit is
+        nudged above the lower one for a blank channel, whose percentile
+        is 0 and which napari would otherwise refuse to render.
         """
-        index = self.channel_index(channel)
-        smallest = np.asarray(self.levels[-1][index])
-        high = float(np.percentile(smallest, CONTRAST_PERCENTILE))
+        sample = self._sample(channel, max_pixels)
+        high = float(np.percentile(sample, CONTRAST_PERCENTILE))
         return 0.0, max(high, 1.0)
 
 

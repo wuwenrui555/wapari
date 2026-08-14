@@ -13,7 +13,9 @@ from wapari.convert import qptiff_to_ome_zarr
 qptiff_to_ome_zarr("<slide>.qptiff", "<slide>.ome.zarr")
 ```
 
-A 53 GB, 45-channel, six-level slide took 3.6 minutes and produced 51 GB. Run it in the background and report when it finishes; do not hold a session waiting on it.
+A 53 GB, 45-channel, six-level slide took 3.6 minutes to write and produced 51 GB; verification is a second pass over the same data. Run it in the background and report when it finishes; do not hold a session waiting on it.
+
+Converting onto a path that already exists raises `FileExistsError`, because writing a zarr group clears the directory first. That includes a partial directory left by an interrupted run, so a retry needs `overwrite=True`, which deletes whatever is there.
 
 ## Decide first — conversion is often not the answer
 
@@ -49,7 +51,7 @@ from wapari.image import open_image
 image = open_image("<slide>.ome.zarr")
 ```
 
-The output is standard NGFF 0.4, so QuPath, Fiji and `ome-zarr` read it too. `napari-ome-zarr` needs Python 3.12 or newer to work against zarr 3 — see `../opening-napari-session/references/gotchas.md` for why an older environment fails in a confusing way.
+The output is standard NGFF 0.4, so QuPath, Fiji and `ome-zarr` read it too. `napari-ome-zarr` needs Python 3.12 or newer to work against zarr 3; an older environment fails with an ImportError that names zarr rather than Python, which is covered in `../opening-napari-session/references/gotchas.md`.
 
 ## Other formats
 

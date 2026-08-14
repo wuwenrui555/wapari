@@ -139,3 +139,106 @@ def test_contrast_limits_never_collapse_to_a_single_value(tmp_path):
     blank.attrs["multiscales"] = [{"datasets": [{"path": "0"}]}]
     low, high = open_image(tmp_path / "blank.ome.zarr").contrast_limits("empty")
     assert low < high
+
+
+def test_a_channel_can_be_named_the_way_the_panel_spells_it_differently(qptiff):
+    """The viewing skill tells the agent that a lookup resolves spelling
+    differences. It has to be true of the lookup, not only of
+    markers.normalize."""
+    image = open_image(qptiff[0])
+    image.channel_names = ["PD-L1", "CD8"]
+    assert image.channel_index("PDL1") == 0
+    assert image.channel_index("pd_l1") == 0
+
+
+def test_a_conjugate_suffix_does_not_hide_a_channel(qptiff):
+    image = open_image(qptiff[0])
+    image.channel_names = ["FAP-biotin", "CD8"]
+    assert image.channel_index("FAP") == 0
+
+
+def test_an_exact_name_still_wins_over_a_normalised_one(qptiff):
+    """Two channels can normalise alike; the literal spelling decides."""
+    image = open_image(qptiff[0])
+    image.channel_names = ["CD8", "CD-8"]
+    assert image.channel_index("CD-8") == 1
+
+
+def test_a_duplicated_channel_name_is_reported(qptiff):
+    """Multi-cycle panels repeat DAPI, and silently taking the first is
+    how you end up displaying cycle 1 while believing it is cycle 3."""
+    image = open_image(qptiff[0])
+    image.channel_names = ["DAPI", "DAPI"]
+    with pytest.raises(KeyError, match="appears 2 times"):
+        image.channel_index("DAPI")
+
+
+def test_contrast_limits_do_not_read_a_huge_level(tmp_path):
+    """A non-pyramidal slide makes levels[-1] the full plane, and a
+    percentile over it would sort two billion pixels."""
+    root = zarr.open_group(str(tmp_path / "flat.ome.zarr"), mode="w", zarr_format=2)
+    root.create_array("0", shape=(1, 4000, 4000), chunks=(1, 512, 512), dtype="uint16")
+    root.attrs["multiscales"] = [{"datasets": [{"path": "0"}]}]
+    root.attrs["omero"] = {"channels": [{"label": "DAPI"}]}
+    image = open_image(tmp_path / "flat.ome.zarr")
+    read = image.contrast_limits("DAPI", max_pixels=10_000)
+    assert read[1] >= read[0]
+
+
+def test_closing_an_image_says_what_breaks(qptiff):
+    """Layers added from a closed image fail later, far from the close."""
+    image = open_image(qptiff[0])
+    image.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        image.pyramid("DAPI")
+
+
+def test_a_channel_can_be_taken_by_position(qptiff):
+    """When two channels normalise alike the error says to index by
+    position, so a position has to be indexable."""
+    image = open_image(qptiff[0])
+    image.channel_names = ["DAPI", "DAPI"]
+    assert image.channel_index(1) == 1
+    assert len(image.pyramid(1)) == len(image.levels)
+    assert image.contrast_limits(1)[1] >= 0
+
+
+def test_a_position_outside_the_panel_is_refused(qptiff):
+    image = open_image(qptiff[0])
+    with pytest.raises(KeyError, match="2 channels"):
+        image.channel_index(7)
+
+
+def test_contrast_limits_also_refuses_a_closed_image(qptiff):
+    """pyramid guards; contrast_limits used to succeed on a closed file
+    and return a number nobody could trace."""
+    image = open_image(qptiff[0])
+    image.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        image.contrast_limits("DAPI")
+
+
+def test_contrast_limits_reads_a_bounded_sample(tmp_path):
+    """The subsample must actually shrink what is sorted, not just
+    return something plausible."""
+    root = zarr.open_group(str(tmp_path / "flat.ome.zarr"), mode="w", zarr_format=2)
+    array = root.create_array(
+        "0", shape=(1, 4000, 4000), chunks=(1, 512, 512), dtype="uint16"
+    )
+    array[:] = 1
+    root.attrs["multiscales"] = [{"datasets": [{"path": "0"}]}]
+    root.attrs["omero"] = {"channels": [{"label": "DAPI"}]}
+    image = open_image(tmp_path / "flat.ome.zarr")
+    assert image.sample_size("DAPI", max_pixels=10_000) <= 10_000
+
+
+def test_a_single_plane_tiff_can_be_displayed(tmp_path):
+    """open_image accepts one, so pyramid and contrast_limits have to
+    work on it rather than raising about chunk lengths."""
+    import tifffile
+
+    path = tmp_path / "plane.tif"
+    tifffile.imwrite(path, np.arange(64, dtype=np.uint16).reshape(8, 8))
+    image = open_image(path)
+    assert len(image.pyramid("channel_0")) == 1
+    assert image.contrast_limits("channel_0")[1] > 0

@@ -98,3 +98,28 @@ def test_describe_groups_a_panel_by_purpose():
     assert "CD3" in described["annotation"]
     assert "PD1" in described["other"]
     assert described["unknown"] == markers.unknown(REAL_PANEL)
+
+
+def test_the_nuclear_channel_is_found_by_name():
+    assert markers.nuclear_channel(["CD8", "DAPI", "CD3"]) == "DAPI"
+
+
+def test_a_panel_with_no_known_nuclear_marker_falls_back_to_the_first():
+    """Panels label nuclear stains in ways the table will never cover in
+    full — Hoechst 33342, DAPI-01, DAPI (cycle 2) — and a viewing session
+    that raises instead of showing something is worse than a wrong guess
+    the user can see and correct."""
+    assert markers.nuclear_channel(["Zzz1", "Zzz2"]) == "Zzz1"
+
+
+def test_an_empty_panel_is_refused():
+    with pytest.raises(ValueError, match="no channels"):
+        markers.nuclear_channel([])
+
+
+def test_boundary_markers_are_separate_from_the_nuclear_one():
+    """A segmentation backend takes one nuclear channel and a set of
+    boundary markers, not a list of six with the nuclear one buried."""
+    boundary = markers.boundary_markers(REAL_PANEL)
+    assert "DAPI" not in boundary
+    assert "NaATPase" in boundary

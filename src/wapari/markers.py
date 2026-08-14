@@ -148,6 +148,33 @@ def markers_for(names: list[str], purpose: str) -> list[str]:
     return chosen
 
 
+def nuclear_channel(names: list[str]) -> str:
+    """Return the channel to put up first.
+
+    The table's nuclear entries win. Panels spell nuclear stains in ways
+    no table will cover in full — ``Hoechst 33342``, ``DAPI-01``, ``DAPI
+    (cycle 2)`` — so an unrecognised panel falls back to its first
+    channel. Showing the wrong channel is visible and correctable;
+    raising leaves the user with an empty viewer.
+    """
+    if not names:
+        raise ValueError("no channels to choose from")
+    for name in names:
+        if "nuclear" in roles(name):
+            return name
+    return names[0]
+
+
+def boundary_markers(names: list[str]) -> list[str]:
+    """Return the markers that draw cell boundaries.
+
+    Separate from :func:`nuclear_channel` because a segmentation backend
+    takes one nuclear channel and a set of boundary markers, not a single
+    list with the nuclear one buried in it.
+    """
+    return [name for name in names if "membrane" in roles(name)]
+
+
 def unknown(names: list[str]) -> list[str]:
     """Return the markers with no entry in the table, in panel order."""
     return [name for name in names if not roles(name)]

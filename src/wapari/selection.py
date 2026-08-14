@@ -10,7 +10,11 @@ does not work this way, and the mismatch is a standing napari proposal
 Hiding a layer leaves the selection alone.
 """
 
-_CONNECTED: dict[int, list] = {}
+import weakref
+
+# Keyed weakly by viewer: an entry keyed by id() would outlive its
+# viewer and then answer for whatever object reused the address.
+_CONNECTED: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 def _select_only(viewer, layer) -> None:
@@ -38,12 +42,11 @@ def select_on_show(viewer):
     callable
         Call it to restore napari's own behaviour.
     """
-    key = id(viewer)
-    if key in _CONNECTED:
-        return _make_disconnect(viewer, key)
+    if viewer in _CONNECTED:
+        return _make_disconnect(viewer)
 
     connected: list = []
-    _CONNECTED[key] = connected
+    _CONNECTED[viewer] = connected
 
     def on_visible(event) -> None:
         layer = event.source
@@ -65,12 +68,12 @@ def select_on_show(viewer):
     viewer.layers.events.inserted.connect(on_inserted)
     connected.append((viewer.layers, on_inserted))
 
-    return _make_disconnect(viewer, key)
+    return _make_disconnect(viewer)
 
 
-def _make_disconnect(viewer, key: int):
+def _make_disconnect(viewer):
     def disconnect() -> None:
-        for source, callback in _CONNECTED.pop(key, []):
+        for source, callback in _CONNECTED.pop(viewer, []):
             events = getattr(source, "events", source)
             if hasattr(events, "visible"):
                 events.visible.disconnect(callback)

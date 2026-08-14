@@ -108,3 +108,22 @@ def test_a_removed_layer_does_not_keep_firing(viewer):
     layer.visible = False
     layer.visible = True
     assert viewer.layers.selection.active is viewer.layers["CD3"]
+
+
+def test_two_viewers_do_not_share_a_connection_record():
+    """The record used to be keyed by id(viewer), and a freed viewer's
+    address is handed to the next one, which then gets a disconnect for
+    a viewer that no longer exists."""
+    first = ViewerModel()
+    first.add_image(np.zeros((4, 4), np.uint16), name="a")
+    select_on_show(first)
+    del first
+
+    second = ViewerModel()
+    second.add_image(np.zeros((4, 4), np.uint16), name="a")
+    second.add_image(np.zeros((4, 4), np.uint16), name="b")
+    select_on_show(second)
+    second.layers.selection = {second.layers["a"]}
+    second.layers["b"].visible = False
+    second.layers["b"].visible = True
+    assert second.layers.selection.active is second.layers["b"]
