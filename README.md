@@ -72,6 +72,22 @@ cd wapari
 uv sync
 ```
 
+## Making the skills discoverable
+
+An agent finds a skill at `<skills-dir>/<skill-name>/SKILL.md`, where the directory name matches the `name:` in the frontmatter. Link them rather than copying, so `git pull` updates them in place:
+
+```bash
+ln -s "$PWD/skills/opening-napari-session" ~/.claude/skills/opening-napari-session
+```
+
+Restart the agent session afterwards, then describe what you want; the matching skill loads itself. Agents without a skills mechanism can be pointed at the `SKILL.md` paths directly — they are plain Markdown and assume no particular runtime.
+
+For the richer napari control path, register the MCP server once per project (already done in this repository's `.mcp.json`) and start a new session, since MCP servers are loaded only at session start:
+
+```bash
+claude mcp add napari --scope project -- uv run --project "$PWD" napari-mcp run
+```
+
 ## References
 
 - [napari training course](https://github.com/sofroniewn/napari-training-course/tree/master/lessons)

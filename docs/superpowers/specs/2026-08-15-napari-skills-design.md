@@ -27,16 +27,24 @@ Three skills with distinct roles. They are not siblings: skill 1 is infrastructu
 
 ### 1. `opening-napari-session`
 
-Guarantees an agent-controllable napari session. Two mechanisms, and the ordering matters: **the bridge is the floor, MCP is the improvement.**
+Guarantees an agent-controllable napari session, by **always starting its own viewer through the bridge**.
 
-- **The command bridge** — `scripts/napari_server.py` plus `scripts/nsend.py` — is what makes these skills self-sufficient. It is a napari process with a socket server whose Qt timer drains queued code on the main thread, driven by any agent that can run a shell command. That includes agents with no MCP support at all (Codex reads `AGENTS.md` and runs CLIs; this is the same vendor-neutral stance `SpatialOmicsAgentSkill` takes). It also covers the case that keeps recurring in practice: an MCP server registered after the session started.
-- **`napari-mcp`** is preferred whenever its tools are present. It is maintained, it is the standard mechanism, it exposes 16 typed tools instead of one code channel, and its napari plugin can attach to a viewer the user opened by hand.
+`scripts/napari_server.py` plus `scripts/nsend.py` is a napari process with a socket server whose Qt timer drains queued code on the main thread, driven by any agent that can run a shell command. That includes agents with no MCP support at all — Codex reads `AGENTS.md` and runs CLIs, the same vendor-neutral stance `SpatialOmicsAgentSkill` takes.
 
-The decision rule in `SKILL.md` is one line: use the MCP tools if the session has them, otherwise run the bridge script. Nothing else branches.
+Attaching to a napari window the user opened by hand is **deliberately out of scope**. It is the one thing the bridge cannot do and an in-process plugin can, and dropping it is what keeps this skill to a single code path with no mechanism to choose between. The user simply gets a second window, owned by the agent, which they can still interact with directly.
+
+`napari-mcp` remains registered and is a fine way to drive that same viewer when a session exposes it, with better-typed arguments than a code channel. It is an alternative, never a prerequisite.
 
 The bridge executes code it receives, so it listens on a **Unix domain socket with 0600 permissions** in a user-private runtime directory, not on a TCP port. There is no port for another local process to connect to, and access is enforced by the filesystem.
 
-Its cost is deliberately small: about 60 lines against napari's most stable public surface (`Viewer`, `napari.run()`), qtpy's `QTimer` and the standard library. It touches no napari internals, so version churn should not reach it.
+Its cost is deliberately small: it targets napari's most stable public surface (`Viewer`, `napari.run()`), qtpy's `QTimer` and the standard library, and touches no napari internals, so version churn should not reach it.
+
+Four decisions came out of building it, each answering a way it failed in review:
+
+- **A lock file, not a liveness probe, settles ownership.** Between `bind()` and `listen()` a socket exists that refuses connections, so two servers starting together both find the path free; measured, 11 of 60 concurrent pairs both bound. An exclusive `flock` decides it, and process death releases it, which is also what makes a crashed run's socket replaceable.
+- **Refusal happens before napari is imported.** Otherwise an occupied path costs the user a window that opens and dies 30 seconds later.
+- **Exit status distinguishes two failures that need different reactions.** 1 means the code ran and raised, so read the traceback; 2 means the call never completed, so look at the session. Anything that returns neither a result nor an error is the second kind.
+- **Whatever the code prints is captured and returned.** Callers write `print()` by reflex; without capture the output went to the server's terminal and vanished, which is the silent-failure shape this repository exists to document.
 
 ### 2. `viewing-multiplex-image`
 
@@ -70,7 +78,7 @@ Batch utility, no viewer. The implementation (`wapari.convert.qptiff_to_ome_zarr
 
 ## Shared knowledge
 
-Traps are documented once, in `skills/viewing-multiplex-image/references/gotchas.md`, and referenced by the other skills. Claude Code discovers only top-level `SKILL.md` files, so a `references/` subdirectory is not mistaken for a skill. Contents so far:
+Traps are documented once, in `skills/opening-napari-session/references/gotchas.md` — the foundation skill, which the others already depend on — and referenced by the rest. Claude Code discovers only top-level `SKILL.md` files, so a `references/` subdirectory is not mistaken for a skill. Contents so far:
 
 - Offscreen screenshots are black on macOS; the window must be shown and events processed.
 - Shapes and Points layers have no undo; export annotations often.
@@ -84,3 +92,16 @@ Traps are documented once, in `skills/viewing-multiplex-image/references/gotchas
 - Drawing annotations and exporting QuPath-compatible geojson — the planned differentiator, but it depends on the crop / mask work below.
 - `crop_by_mask`: crop by polygon with a fill value, or by bounding box. Designed and approved, deferred behind this work.
 - CosMx and OME-TIFF conversion inputs; the skill name already allows them.
+
+## Later: GUI widgets
+
+napari lacks conveniences QuPath users take for granted — hide or show every layer at once, turn the current shape into a mask, crop to it. Raised 2026-08-15, to be designed separately.
+
+The boundary rule already answers where they go. A "hide all layers" button is useful to someone clicking it by hand, so it is package, not skill. Since wapari already depends on napari and PyQt5, declaring npe2 entry points costs nothing extra, and `pip install wapari` then ships the widgets with the library — no separate plugin distribution, no version to keep in step, no install instructions for an agent to recite.
+
+Two tiers, split by lifetime rather than by technology:
+
+- **Durable widgets** live in the package and are declared as npe2 contributions. `magicgui` keeps each one to roughly ten lines.
+- **Ad-hoc widgets** are injected at runtime by an agent through `viewer.window.add_dock_widget` for one task and disappear with the session. These stay out of the package by the same rule that keeps the bridge out of it.
+
+Publishing to napari hub is a separate decision, worth making only if the widgets are meant for people outside this lab.
