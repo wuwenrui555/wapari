@@ -119,6 +119,41 @@ def test_stdout_capture_does_not_replace_the_result(server):
     assert "noise" in reply["output"]
 
 
+def test_a_client_that_leaves_does_not_raise_in_the_server(server):
+    """A client giving up is normal — nsend times out by design. An
+    unhandled BrokenPipeError would spill a traceback into the log the
+    skill tells agents to read when something goes wrong."""
+    raised = []
+    previous = threading.excepthook
+    threading.excepthook = lambda args: raised.append(args.exc_type.__name__)
+    try:
+        conn = socket.socket(socket.AF_UNIX)
+        conn.connect(str(server.socket_path))
+        conn.sendall(b"answer\x00")
+        conn.close()  # gone before the reply is written
+        time.sleep(0.4)
+    finally:
+        threading.excepthook = previous
+    assert raised == []
+    assert send(server, "answer")["result"] == "42"  # still serving
+
+
+def test_a_connection_that_never_sends_is_dropped(sock_dir, monkeypatch):
+    """Otherwise its thread parks for the life of the viewer."""
+    monkeypatch.setattr(bridge, "RECV_TIMEOUT_SECONDS", 0.2)
+    srv = bridge.CommandServer({}, sock_dir / "idle.sock")
+    srv.start()
+    try:
+        before = threading.active_count()
+        conn = socket.socket(socket.AF_UNIX)
+        conn.connect(str(srv.socket_path))
+        time.sleep(0.8)  # long enough for the receive timeout to fire
+        assert threading.active_count() <= before
+        conn.close()
+    finally:
+        srv.stop()
+
+
 def test_error_returns_traceback_and_server_survives(server):
     reply = send(server, "1 / 0")
     assert reply["ok"] is False
@@ -212,6 +247,39 @@ def test_a_refused_start_does_not_remove_the_winners_socket(sock_dir):
         assert path.is_socket()
     finally:
         winner.stop()
+
+
+def test_the_lock_is_held_before_napari_is_imported(sock_dir):
+    """napari takes 30-60 seconds to import. If the lock is only taken
+    after that, a second server started during the first one's cold start
+    opens a window and then dies, which is the worst of both outcomes.
+    """
+    stub = sock_dir / "stub"
+    stub.mkdir()
+    marker = sock_dir / "napari-was-imported"
+    (stub / "napari.py").write_text(
+        f"import pathlib, time\npathlib.Path({str(marker)!r}).touch()\ntime.sleep(30)\n"
+    )
+    environment = {**os.environ, "PYTHONPATH": str(stub)}
+    socket_path = sock_dir / "race.sock"
+
+    first = bridge.CommandServer({}, socket_path)
+    first.start()  # stands in for a server midway through its cold start
+    try:
+        done = subprocess.run(
+            [sys.executable, str(SCRIPT), "--socket", str(socket_path)],
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=30,
+        )
+    finally:
+        first.stop()
+
+    assert done.returncode == 2
+    assert "already serving" in done.stderr
+    assert "Traceback" not in done.stderr
+    assert not marker.exists(), "napari was imported before the lock was taken"
 
 
 def test_main_refuses_an_occupied_socket_before_loading_napari(server):

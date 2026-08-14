@@ -32,6 +32,7 @@ import traceback
 TERMINATOR = b"\x00"
 SOURCE = "<nsend>"
 RECV_TIMEOUT_SECONDS = 60.0
+REPLY_TIMEOUT_SECONDS = 3600.0
 
 # AF_UNIX paths are capped by the OS (104 bytes on macOS, 108 on Linux).
 # Binding past it raises a bare "AF_UNIX path too long".
@@ -108,19 +109,31 @@ class CommandServer:
         self._owns_socket = False
         self._lock_fd: int | None = None
 
+    def reserve(self) -> None:
+        """Claim this socket path, before doing anything expensive.
+
+        The lock, not the probe, is what settles ownership: between
+        ``bind()`` and ``listen()`` a socket exists that refuses
+        connections, so two servers starting together can both find the
+        path free. Only one can hold the lock.
+
+        Callers that load something slow — napari takes 30 to 60 seconds
+        — should reserve first, so a refusal costs a message instead of a
+        window that opens and dies.
+        """
+        if self._lock_fd is not None:
+            return
+        ensure_available(self.socket_path)
+        self.socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._take_lock()
+
     def start(self) -> None:
         """Bind the socket and start accepting connections.
 
         Refuses to displace a server that already holds this path: two
         viewers sharing one reachable socket is worse than a failure.
         """
-        ensure_available(self.socket_path)
-        self.socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # The lock, not the probe, is what settles ownership. Between
-        # bind() and listen() a socket exists that refuses connections,
-        # so two servers starting together can both find the path free;
-        # only one can hold the lock.
-        self._take_lock()
+        self.reserve()
         if self.socket_path.exists():
             self.socket_path.unlink()  # left behind by a crashed run
         self._sock = socket.socket(socket.AF_UNIX)
@@ -181,8 +194,12 @@ class CommandServer:
             reply: dict = {}
             done = threading.Event()
             self._queue.put((code.decode(), reply, done))
-            done.wait(timeout=3600)
+            done.wait(timeout=REPLY_TIMEOUT_SECONDS)
             conn.sendall(json.dumps(reply).encode() + TERMINATOR)
+        except OSError:
+            # The client gave up and closed, which nsend does by design
+            # on its own timeout. Not worth a traceback in the log.
+            pass
         finally:
             conn.close()
 
@@ -240,10 +257,13 @@ def main() -> int:
     parser.add_argument("--title", default="wapari agent viewer")
     args = parser.parse_args()
 
-    # Fail before napari loads: an occupied socket should not cost the
-    # user a window that opens and immediately dies.
+    # Claim the path before napari loads. Importing it takes 30 to 60
+    # seconds, and a server that only locked afterwards would put a
+    # window on screen and then fail, which is worse than either.
+    namespace: dict = {}
+    server = CommandServer(namespace, args.socket or default_socket_path())
     try:
-        socket_path = ensure_available(args.socket or default_socket_path())
+        server.reserve()
     except (RuntimeError, ValueError) as error:
         print(error, file=sys.stderr)
         return 2
@@ -252,7 +272,7 @@ def main() -> int:
     from qtpy.QtCore import QTimer
 
     viewer = napari.Viewer(title=args.title)
-    server = CommandServer({"viewer": viewer, "napari": napari}, socket_path)
+    namespace.update({"viewer": viewer, "napari": napari})
     server.start()
     print(f"[napari-server] listening on {server.socket_path}", flush=True)
 
