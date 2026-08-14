@@ -7,14 +7,14 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "imagecodecs>=2025.3.30",
     "ipykernel>=7.1.0",
     "matplotlib>=3.10.7",
     "napari>=0.6.5",
-    "napari-ome-zarr>=0.6.1",
-    "ome-zarr>=0.8.3",
+    "napari-ome-zarr>=0.10.0",
+    "ome-zarr>=0.18.0",
     "pyqt5>=5.15.11",
     "zarr>=3",
 ]
@@ -27,7 +27,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -39,6 +39,7 @@ quote-style = "double"
 [dependency-groups]
 dev = [
     "napari-mcp>=0.1.0",
+    "pytest>=9.1.1",
 ]
 
 [tool.ruff.lint.per-file-ignores]
