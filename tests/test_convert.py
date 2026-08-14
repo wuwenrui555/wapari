@@ -137,6 +137,34 @@ def test_auxiliary_series_preserved(converted):
     np.testing.assert_array_equal(np.asarray(root["extras"]["thumbnail"]), thumbnail)
 
 
+def test_single_level_image_converts(tmp_path):
+    """A series with no sub-resolutions exposes a bare zarr Array rather
+    than a group of levels, which is a separate code path."""
+    rng = np.random.default_rng(1)
+    data = rng.integers(0, 65535, (2, 128, 96), dtype=np.uint16)
+    path = tmp_path / "flat.qptiff"
+    with tifffile.TiffWriter(path) as tw:
+        for c, name in enumerate(CHANNEL_NAMES):
+            tw.write(
+                data[c],
+                tile=(64, 64),
+                metadata=None,
+                software="PerkinElmer-QPI",
+                description=(
+                    "<PerkinElmer-QPI-ImageDescription>"
+                    f"<Biomarker>{name}</Biomarker>"
+                    "</PerkinElmer-QPI-ImageDescription>"
+                ),
+            )
+
+    out = qptiff_to_ome_zarr(
+        path, tmp_path / "flat.ome.zarr", chunk_size=64, progress=False
+    )
+    root = zarr.open_group(str(out), mode="r")
+    assert len(root.attrs["multiscales"][0]["datasets"]) == 1
+    np.testing.assert_array_equal(np.asarray(root["0"]), data)
+
+
 def test_explicit_channel_names_override_metadata(qptiff, tmp_path):
     path, _, _ = qptiff
     out = tmp_path / "override.ome.zarr"
