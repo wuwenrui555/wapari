@@ -19,7 +19,6 @@ import multiprocessing
 import os
 import pathlib
 import uuid
-from typing import Union
 from xml.etree import ElementTree
 
 import numpy as np
@@ -65,7 +64,7 @@ class TiffZarrReader:
 
     def __init__(
         self,
-        tiff_f: Union[str, pathlib.Path],
+        tiff_f: str | pathlib.Path,
         channel_names: list[str] = None,
     ):
         """
@@ -146,8 +145,8 @@ class TiffZarrReader:
     @classmethod
     def from_ometiff(
         cls,
-        tiff_f: Union[str, pathlib.Path],
-        markerlist_f: Union[str, pathlib.Path] = None,
+        tiff_f: str | pathlib.Path,
+        markerlist_f: str | pathlib.Path = None,
     ) -> "TiffZarrReader":
         """
         Initialize a TiffZarrReader specifically for OME-TIFF files.
@@ -182,8 +181,8 @@ class TiffZarrReader:
     @classmethod
     def from_qptiff(
         cls,
-        tiff_f: Union[str, pathlib.Path],
-        markerlist_f: Union[str, pathlib.Path] = None,
+        tiff_f: str | pathlib.Path,
+        markerlist_f: str | pathlib.Path = None,
     ) -> "TiffZarrReader":
         """
         Initialize a TiffZarrReader specifically for QPTIFF files.
@@ -216,7 +215,7 @@ class TiffZarrReader:
         return cls(tiff_f, channel_names)
 
     @staticmethod
-    def extract_channel_names_ometiff(path: Union[str, pathlib.Path]) -> list[str]:
+    def extract_channel_names_ometiff(path: str | pathlib.Path) -> list[str]:
         """
         Extract channel names from OME-TIFF metadata.
 
@@ -253,7 +252,7 @@ class TiffZarrReader:
         return channel_names
 
     @staticmethod
-    def extract_channel_names_qptiff(path: Union[str, pathlib.Path]) -> list[str]:
+    def extract_channel_names_qptiff(path: str | pathlib.Path) -> list[str]:
         """
         Extract channel names from QPTIFF metadata.
 
@@ -295,7 +294,7 @@ class TiffZarrReader:
 
         return channel_names
 
-    def channel_index(self, channels: Union[str, list[str]]) -> Union[int, list[int]]:
+    def channel_index(self, channels: str | list[str]) -> int | list[int]:
         """
         Get the index of a channel or list of channels by name.
 
@@ -460,7 +459,7 @@ class PyramidWriter:
     @classmethod
     def from_fs(
         cls,
-        input_data: list[Union[str, pathlib.Path]],
+        input_data: list[str | pathlib.Path],
         channel_names: list[str] = None,
         is_mask: bool = False,
     ) -> "PyramidWriter":
@@ -551,7 +550,7 @@ class PyramidWriter:
     @classmethod
     def from_array(
         cls,
-        input_data: Union[np.ndarray, zarr.Array],
+        input_data: np.ndarray | zarr.Array,
         channel_names: list[str] = None,
         is_mask: bool = False,
     ) -> "PyramidWriter":
@@ -607,7 +606,7 @@ class PyramidWriter:
         # Process and validate each channel
         in_imgs = []
         in_chns = []
-        for channel_name, img in zip(channel_names, input_data):
+        for channel_name, img in zip(channel_names, input_data, strict=False):
             PyramidWriter._validate_image_2d(
                 shape=img.shape,
                 dtype=img.dtype,
@@ -626,7 +625,7 @@ class PyramidWriter:
     @classmethod
     def from_dict(
         cls,
-        input_data: dict[str, Union[np.ndarray, zarr.Array]],
+        input_data: dict[str, np.ndarray | zarr.Array],
         channel_names: list[str] = None,
         is_mask: bool = False,
     ) -> "PyramidWriter":
@@ -673,8 +672,10 @@ class PyramidWriter:
         # Process and validate each image in the dictionary
         in_imgs = []
         in_chns = []
-        for channel_name, img_in in zip(channel_names, input_data.values()):
-            if isinstance(img_in, (np.ndarray, zarr.Array)):
+        for channel_name, img_in in zip(
+            channel_names, input_data.values(), strict=False
+        ):
+            if isinstance(img_in, np.ndarray | zarr.Array):
                 if img_in.ndim == 2:
                     # Handle 2D image
                     PyramidWriter._validate_image_2d(
@@ -870,7 +871,7 @@ class PyramidWriter:
             """Generate tiles for the base (highest resolution) level."""
             ts = tile_size
             ch, cw = cshapes[0]  # Number of tiles in height and width
-            for c, zimg in enumerate(in_imgs, 1):
+            for _c, zimg in enumerate(in_imgs, 1):
                 img = zimg[:]  # Load entire image for base level
                 for j in range(ch):
                     for i in range(cw):
@@ -915,7 +916,7 @@ class PyramidWriter:
 
     def export_ometiff_pyramid(
         self,
-        output_f: Union[str, pathlib.Path],
+        output_f: str | pathlib.Path,
         pixel_size: float = None,
         tile_size: int = 256,
         is_mask: bool = False,

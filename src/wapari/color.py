@@ -15,14 +15,13 @@ Main Components
 
 # %%
 import colorsys
-from typing import List, Tuple, Union
 
 import numpy as np
 
 
 def generate_distinct_colors(
     n: int, saturation: float = 0.7, value: float = 0.95
-) -> List[Tuple[int, int, int]]:
+) -> list[tuple[int, int, int]]:
     """
     Generate n visually distinct colors using HSV color space with golden ratio spacing.
 
@@ -74,7 +73,7 @@ def generate_distinct_colors(
 
     # Use golden ratio method for larger color sets to ensure even distribution
     hue = 0
-    for i in range(n):
+    for _i in range(n):
         # Convert HSV to RGB using standard color space transformation
         rgb = colorsys.hsv_to_rgb(hue, saturation, value)
         # Scale from [0,1] to [0,255] integer range for standard RGB representation
@@ -87,8 +86,8 @@ def generate_distinct_colors(
 
 
 def assign_bright_colors(
-    labels: List[Union[str, int]],
-) -> dict[Union[str, int], Tuple[int, int, int]]:
+    labels: list[str | int],
+) -> dict[str | int, tuple[int, int, int]]:
     """
     Assign distinct bright RGB colors to categorical labels for visualization.
 
@@ -113,11 +112,11 @@ def assign_bright_colors(
     # Generate distinct colors using optimized spacing algorithm
     colors = generate_distinct_colors(n_colors)
 
-    return dict(zip(labels, colors))
+    return dict(zip(labels, colors, strict=False))
 
 
 def create_colormap(
-    name: str, colors: List[Tuple[int, int, int]], n_interpolation: int = 256
+    name: str, colors: list[tuple[int, int, int]], n_interpolation: int = 256
 ) -> "DefaultColorMap":
     """
     Create a continuous colormap from discrete RGB colors with linear interpolation.
@@ -177,9 +176,9 @@ class DefaultColorMap:
     def __init__(
         self,
         name: str,
-        r: List[int],
-        g: List[int],
-        b: List[int],
+        r: list[int],
+        g: list[int],
+        b: list[int],
         n_colors: int = 256,
     ):
         """
@@ -275,7 +274,7 @@ class DefaultColorMap:
         return (r << 16) | (g << 8) | b
 
     @staticmethod
-    def _unpack_rgb(color: int) -> Tuple[int, int, int]:
+    def _unpack_rgb(color: int) -> tuple[int, int, int]:
         """
         Unpack a 32-bit packed RGB integer into separate channel values.
 
