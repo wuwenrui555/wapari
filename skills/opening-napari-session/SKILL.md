@@ -11,7 +11,7 @@ Every interactive skill in this repository needs the same thing first: a napari 
 
 **Always create the viewer with the bridge, and only ever drive one you created.** Do not try to reach a napari window the user opened by hand — that is the case that needs an in-process plugin, and refusing it keeps this skill to a single code path that works in any agent with a shell.
 
-The consequence is worth stating to the user once: a window they opened themselves is theirs, and this skill will start a separate one it owns. They can still click, pan and draw in the one it started; both of you are looking at the same viewer.
+Tell the user once: a window they opened themselves is theirs, and this skill will start a separate one it owns. They can still click, pan and draw in the one it started; both of you are looking at the same viewer.
 
 If the session happens to expose `napari-mcp` tools, they are a fine way to drive that same viewer, and their typed arguments read better than a code channel. They are an alternative, not a prerequisite: MCP servers load only when a session starts, so their absence is normal and never a reason to stop.
 
@@ -20,7 +20,7 @@ If the session happens to expose `napari-mcp` tools, they are a fine way to driv
 Sessions usually run in the user's data directory, not in this repository, so address both the scripts and the environment absolutely. `$SKILL` is this skill's own directory and `$REPO` its repository root:
 
 ```bash
-SKILL=<this skill's directory>
+SKILL="<the directory this file is in>"
 REPO="${SKILL%/skills/*}"
 run() { uv run --project "$REPO" python "$@"; }   # a function, not a
 # variable: zsh does not word-split RUN="uv run …" the way bash does
@@ -77,7 +77,7 @@ The namespace holds `viewer` and `napari`, and nothing else — import what you 
 
 An expression returns its `repr`; anything else returns `ok`. Whatever the code prints comes back too, ahead of the result. On failure the traceback goes to stderr, and the exit status separates the two cases that need different reactions: **1** means the code ran and raised, so read the traceback; **2** means the call did not complete, so check the session — no server, an unusable path, or a viewer that never answered.
 
-Code runs on the GUI thread, so anything slow or blocking freezes the window and every later call until it finishes. Keep each message short, and load large data lazily rather than reading it in one call. A reply that does not arrive within `--timeout` seconds (600 by default) gives up with exit 2 rather than waiting; raise it for a call that is genuinely long, and read it as "the viewer is wedged" otherwise.
+Code runs on the GUI thread, so anything slow or blocking freezes the window and every later call until it finishes. Keep each message short, and load large data lazily rather than reading it in one call. A reply that does not arrive within `--timeout` seconds (600 by default) gives up with exit 2 rather than waiting; raise it for a call that is genuinely long, and read it as "the viewer is wedged" otherwise. Giving up does not cancel anything — the queued code still runs when the viewer catches up, so retrying an `add_image` that timed out leaves two layers.
 
 ## Confirming what the user sees
 

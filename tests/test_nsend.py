@@ -8,6 +8,7 @@ failure.
 import importlib.util
 import pathlib
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -172,6 +173,57 @@ def test_an_incomplete_call_is_not_reported_as_raised_code(short_dir):
         stop.set()
         thread.join(timeout=2)
         srv.stop()
+
+
+def canned_reply_server(short_dir, payload: bytes):
+    """A socket that answers every request with a fixed payload."""
+    path = short_dir / "canned.sock"
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(str(path))
+    listener.listen(4)
+
+    def serve():
+        while True:
+            try:
+                conn, _ = listener.accept()
+            except OSError:
+                return
+            conn.recv(1 << 16)
+            conn.sendall(payload)
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    return path, listener
+
+
+def test_a_reply_that_is_not_json_exits_2_not_1(short_dir):
+    """Exit 1 tells the agent to go read a traceback from its own code.
+    A malformed reply is not that, and --socket can point anywhere."""
+    path, listener = canned_reply_server(short_dir, b"not json at all\x00")
+    try:
+        done = subprocess.run(
+            [sys.executable, str(CLIENT), "--socket", str(path), "1"],
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 2
+        assert "Traceback" not in done.stderr
+    finally:
+        listener.close()
+
+
+def test_a_reply_missing_its_result_exits_2_not_1(short_dir):
+    path, listener = canned_reply_server(short_dir, b'{"ok": true}\x00')
+    try:
+        done = subprocess.run(
+            [sys.executable, str(CLIENT), "--socket", str(path), "1"],
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 2
+        assert "Traceback" not in done.stderr
+    finally:
+        listener.close()
 
 
 def test_a_wedged_viewer_times_out_instead_of_hanging(short_dir):

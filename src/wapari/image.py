@@ -1,9 +1,9 @@
 """Lazy access to a multiplexed slide, whatever it is stored as.
 
 A whole-slide panel is tens of gigabytes, so nothing here reads pixels
-until an array is computed. Both supported formats — Akoya qptiff and
-OME-Zarr — are presented the same way: named channels, a pyramid of
-levels per channel, and a pixel size.
+until an array is computed. Akoya qptiff, OME-TIFF and OME-Zarr are all
+presented the same way: named channels, a pyramid of levels per channel,
+and a pixel size.
 """
 
 import pathlib
@@ -96,9 +96,8 @@ class Image:
     def contrast_limits(self, channel: str) -> tuple[float, float]:
         """Suggest display limits for a channel.
 
-        Measured on the smallest pyramid level: a percentile over level 0
-        of a real slide would read every pixel, and the answer is the
-        same to within a display's precision. The upper limit is nudged
+        Measured on the smallest pyramid level, since a percentile over
+        level 0 would read every pixel. The upper limit is nudged
         above the lower one for a blank channel, whose percentile is 0
         and which napari would otherwise refuse to render.
         """
@@ -109,19 +108,46 @@ class Image:
 
 
 def _qptiff_channel_names(series: tifffile.TiffPageSeries) -> list[str]:
-    """Read marker names from the per-page ``<Biomarker>`` XML."""
+    """Read marker names from the per-page ``<Biomarker>`` XML.
+
+    Only a qptiff's pages carry that XML. Other formats give pages with
+    no description at all — tifffile returns bare ``TiffFrame`` objects
+    beyond page 0 — or a description that is not XML, and neither is a
+    reason to fail: an unnamed channel is still a usable channel.
+    """
     names = []
     for i, page in enumerate(series.pages):
-        description = page.description or ""
         name = None
-        if description:
-            root = ElementTree.fromstring(description)
-            for tag in ("Biomarker", "Name"):
-                found = root.find(tag)
-                if found is not None and found.text:
-                    name = found.text
-                    break
+        description = getattr(page, "description", "") or ""
+        if description.lstrip().startswith("<"):
+            try:
+                root = ElementTree.fromstring(description)
+            except ElementTree.ParseError:
+                root = None
+            if root is not None:
+                for tag in ("Biomarker", "Name"):
+                    found = root.find(tag)
+                    if found is not None and found.text:
+                        name = found.text
+                        break
         names.append(name or f"channel_{i}")
+    return names
+
+
+def _ome_channel_names(tif: tifffile.TiffFile, count: int) -> list[str]:
+    """Read channel names from OME-XML, falling back to positions."""
+    names: list[str] = []
+    try:
+        root = ElementTree.fromstring(tif.ome_metadata or "")
+    except ElementTree.ParseError:
+        root = None
+    if root is not None:
+        names = [
+            channel.attrib.get("Name") or f"channel_{i}"
+            for i, channel in enumerate(root.findall(".//{*}Channel"))
+        ]
+    if len(names) != count:
+        names = [f"channel_{i}" for i in range(count)]
     return names
 
 
@@ -137,7 +163,8 @@ def _qptiff_pixel_size_um(page: tifffile.TiffPage) -> float | None:
     return unit_to_um[unit] / (num / den)
 
 
-def _open_qptiff(path: pathlib.Path) -> Image:
+def _open_tiff(path: pathlib.Path) -> Image:
+    """Open a qptiff, an OME-TIFF or a plain TIFF."""
     tif = tifffile.TiffFile(path)  # left open: the levels read from it lazily
     series = tif.series[0]
     store = zarr.open(series.aszarr(), mode="r")
@@ -147,9 +174,18 @@ def _open_qptiff(path: pathlib.Path) -> Image:
         levels = [store[str(i)] for i in range(len(series.levels))]
     else:
         levels = [store]
+
+    count = levels[0].shape[0] if levels[0].ndim == 3 else 1
+    if tif.is_ome:
+        names = _ome_channel_names(tif, count)
+    else:
+        names = _qptiff_channel_names(series)
+    if len(names) != count:
+        names = [f"channel_{i}" for i in range(count)]
+
     return Image(
         path,
-        _qptiff_channel_names(series),
+        names,
         levels,
         _qptiff_pixel_size_um(series.pages[0]),
         handle=tif,
@@ -161,10 +197,15 @@ def _open_ome_zarr(path: pathlib.Path) -> Image:
     multiscales = root.attrs["multiscales"][0]
     levels = [root[dataset["path"]] for dataset in multiscales["datasets"]]
 
-    omero = root.attrs.get("omero", {})
-    names = [channel["label"] for channel in omero.get("channels", [])]
-    if not names:
-        names = [f"channel_{i}" for i in range(levels[0].shape[0])]
+    # `label` is optional in NGFF omero, and a writer may name only some
+    # channels, so positions fill in for whatever is missing rather than
+    # the panel coming back short.
+    count = levels[0].shape[0]
+    channels = root.attrs.get("omero", {}).get("channels", [])
+    names = [
+        (channels[i].get("label") if i < len(channels) else None) or f"channel_{i}"
+        for i in range(count)
+    ]
 
     pixel_size = None
     transformations = multiscales["datasets"][0].get("coordinateTransformations")
@@ -182,4 +223,4 @@ def open_image(path: str | pathlib.Path) -> Image:
         raise FileNotFoundError(f"no image at {path}")
     if path.is_dir() or "".join(path.suffixes).endswith(".zarr"):
         return _open_ome_zarr(path)
-    return _open_qptiff(path)
+    return _open_tiff(path)

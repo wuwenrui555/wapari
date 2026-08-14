@@ -101,12 +101,27 @@ def main() -> int:
                 return 2
             buf += chunk
 
-    reply = json.loads(buf[: -len(TERMINATOR)])
+    # A reply that cannot be read is a broken channel, not code that
+    # raised, so it must not be reported with the status that sends the
+    # caller looking for a traceback in their own code.
+    try:
+        reply = json.loads(buf[: -len(TERMINATOR)])
+    except json.JSONDecodeError:
+        print(
+            f"the reply from {socket_path} is not valid JSON; is a napari "
+            "server really listening there?",
+            file=sys.stderr,
+        )
+        return 2
+
     # Whatever the code printed comes first, so it reads like a session.
     printed = reply.get("output", "")
     if printed:
         sys.stdout.write(printed if printed.endswith("\n") else printed + "\n")
     if reply.get("ok"):
+        if "result" not in reply:
+            print("the reply claims success but carries no result", file=sys.stderr)
+            return 2
         print(reply["result"])
         return 0
     if "error" not in reply:

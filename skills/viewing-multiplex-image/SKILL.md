@@ -5,9 +5,7 @@ description: Use when the user wants to look at a multiplexed slide (CODEX / Ako
 
 # Viewing a multiplexed image
 
-A CODEX slide is tens of gigabytes and carries forty or more markers. Two things follow, and they shape everything below: **never read it eagerly**, and **never put the whole panel on screen**. Forty additive layers are a wall of colour that answers no question.
-
-The order is: open lazily, show one channel, report the panel by what its markers are *for*, then ask what the user is doing and add the markers for that.
+A CODEX slide is tens of gigabytes and carries forty or more markers. Two things follow: **never read it eagerly**, and **never put the whole panel on screen**. Forty additive layers are a wall of colour that answers no question.
 
 ## 1. Get a viewer
 
@@ -79,7 +77,18 @@ Raising the lower limit to around the 60th percentile cuts the pervasive backgro
 
 A layer can also be loaded but hidden — `layer.visible = False`. Prefer that to leaving a marker out: the user sees the whole relevant set in the layer list and toggles what they want, without waiting for anything to load.
 
-## 5. Confirm what is on screen
+## 5. Make showing a layer select it
+
+Do this once per session, early, before the user starts clicking. napari keeps visibility and selection independent: clicking a layer's eye icon shows it but does not select it, so adjusting its contrast takes a second click — and an adjustment made before that click silently lands on whichever layer was selected before.
+
+```python
+from wapari.selection import select_on_show
+select_on_show(viewer)
+```
+
+Showing a layer now selects it; hiding one leaves the selection alone, which is how QuPath behaves. This is a standing napari proposal (napari/napari#7532) rather than a setting, so it has to be applied per viewer. Say once that you have done it — the window the user is clicking in has just changed behaviour.
+
+## 6. Confirm what is on screen
 
 Screenshot and read it, as `opening-napari-session` describes. All black means the canvas did not draw, not that the channel is empty; a channel that is genuinely blank shows as a uniform field once the contrast limits are right.
 

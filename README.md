@@ -9,7 +9,7 @@ The repository has two layers:
 
 ## What you can ask for
 
-Skills match on intent, not on wording, and the language you ask in does not matter. The examples below are what these skills are built to handle.
+Skills match on intent, not on wording, and the language you ask in does not matter.
 
 **Open a viewer you can talk to.**
 
@@ -29,7 +29,7 @@ Loads the pyramid lazily, so a 53 GB slide appears in seconds and nothing is rea
 >
 > Show me the T cell markers.
 
-Segmentation means DAPI plus membrane markers; annotation means the lineage-specific ones. Ask for a purpose and the agent picks; ask for specific markers and it adds exactly those.
+Segmentation means DAPI plus membrane markers; annotation means the lineage-specific ones. Ask for specific markers instead and it adds exactly those.
 
 **Ask what is in a file.**
 

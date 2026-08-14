@@ -70,6 +70,7 @@ def qptiff_to_ome_zarr(
     pixel_size_um: float | None = None,
     verify: bool = True,
     progress: bool = True,
+    overwrite: bool = False,
 ) -> pathlib.Path:
     """Convert a pyramidal qptiff to OME-Zarr, preserving all metadata.
 
@@ -101,12 +102,26 @@ def qptiff_to_ome_zarr(
     qptiff_f = pathlib.Path(qptiff_f)
     zarr_f = pathlib.Path(zarr_f)
 
+    # Writing a zarr group clears the directory first, so an existing
+    # path has to be an explicit decision rather than a side effect.
+    if zarr_f.exists() and not overwrite:
+        raise FileExistsError(
+            f"{zarr_f} already exists; pass overwrite=True to replace it, "
+            "which deletes everything already in that directory"
+        )
+
     if channel_names is None:
         channel_names = TiffZarrReader.extract_channel_names_qptiff(qptiff_f)
 
     with tifffile.TiffFile(qptiff_f) as tif:
         series = tif.series[0]
         page0 = series.pages[0]
+        n_channels = series.levels[0].shape[0]
+        if len(channel_names) != n_channels:
+            raise ValueError(
+                f"got {len(channel_names)} channel names for {n_channels} "
+                f"channels: {', '.join(channel_names)}"
+            )
         if pixel_size_um is None:
             pixel_size_um = _pixel_size_um(page0) or 1.0
 
@@ -195,39 +210,36 @@ def qptiff_to_ome_zarr(
 def verify_conversion(
     qptiff_f: str | pathlib.Path,
     zarr_f: str | pathlib.Path,
-    n_windows: int = 8,
-    window: int = 256,
-) -> None:
-    """Compare random pixel windows between source and converted data.
+    band_height: int = 2048,
+) -> int:
+    """Compare every pixel of the copy against the source.
 
-    For every pyramid level, the window at the origin plus ``n_windows``
-    random windows are compared pixel-for-pixel across all channels.
-    Raises ``RuntimeError`` on any mismatch. This guards against silent
-    writer corruption, which plausible-looking output does not reveal.
+    Reads both sides in row bands, so memory stays bounded whatever the
+    slide's size, and raises ``RuntimeError`` on the first mismatch. A sample
+    would not be enough: corruption in this ecosystem is silent and can
+    sit anywhere. Returns the number of pixels compared.
     """
-    rng = np.random.default_rng(0)
     root = zarr.open_group(str(zarr_f), mode="r")
+    compared = 0
     with tifffile.TiffFile(qptiff_f) as tif:
         for i, src in enumerate(_open_levels(tif.series[0])):
-            dst = root[str(i)]
+            try:
+                dst = root[str(i)]
+            except KeyError:
+                raise RuntimeError(f"level {i} is missing from {zarr_f}") from None
             if src.shape != dst.shape:
                 raise RuntimeError(
                     f"shape mismatch at level {i}: {src.shape} vs {dst.shape}"
                 )
-            _, height, width = src.shape
-            origins = [(0, 0)] + [
-                (
-                    int(rng.integers(0, max(1, height - window))),
-                    int(rng.integers(0, max(1, width - window))),
-                )
-                for _ in range(n_windows)
-            ]
-            for y0, x0 in origins:
-                y1, x1 = min(y0 + window, height), min(x0 + window, width)
-                if not np.array_equal(
-                    np.asarray(src[:, y0:y1, x0:x1]),
-                    np.asarray(dst[:, y0:y1, x0:x1]),
-                ):
-                    raise RuntimeError(
-                        f"pixel mismatch at level {i}, window y={y0}:{y1}, x={x0}:{x1}"
-                    )
+            n_channels, height, _ = src.shape
+            for c in range(n_channels):
+                for y0 in range(0, height, band_height):
+                    y1 = min(y0 + band_height, height)
+                    band = np.asarray(src[c, y0:y1, :])
+                    if not np.array_equal(band, np.asarray(dst[c, y0:y1, :])):
+                        raise RuntimeError(
+                            f"pixel mismatch at level {i}, channel {c}, "
+                            f"rows {y0} to {y1}"
+                        )
+                    compared += band.size
+    return compared

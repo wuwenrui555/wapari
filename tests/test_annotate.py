@@ -1,0 +1,166 @@
+"""Tests for wapari.annotate."""
+
+import numpy as np
+import pytest
+from napari.components import ViewerModel
+
+from wapari.annotate import (
+    DEFAULT_MAX_TEXTURE_SIZE,
+    add_labels_for,
+    patch_new_labels,
+    texture_safe_factor,
+)
+
+
+@pytest.fixture
+def viewer():
+    viewer = ViewerModel()
+    viewer.add_image(
+        [np.zeros((40, 30), np.uint16), np.zeros((20, 15), np.uint16)],
+        name="DAPI",
+        multiscale=True,
+    )
+    return viewer
+
+
+def test_a_small_image_needs_no_downsampling():
+    assert texture_safe_factor((40, 30), limit=16384) == 1
+
+
+def test_a_shape_at_the_limit_needs_no_downsampling():
+    assert texture_safe_factor((16384, 16384), limit=16384) == 1
+
+
+def test_one_pixel_over_the_limit_needs_downsampling():
+    assert texture_safe_factor((16385, 100), limit=16384) == 2
+
+
+def test_a_whole_slide_is_reduced_until_every_axis_fits():
+    """The real case: 48960 over a 16384 limit needs a factor of 3, and
+    3 is what keeps the most detail — 4 throws away precision for free."""
+    assert texture_safe_factor((48960, 23040), limit=16384) == 3
+
+
+def test_the_factor_accounts_for_rounding_up():
+    """ceil(shape / factor) is what the array will be, so a factor that
+    only fits after truncation is not safe."""
+    factor = texture_safe_factor((32769, 10), limit=16384)
+    assert -(-32769 // factor) <= 16384
+
+
+def test_labels_are_aligned_to_the_image(viewer):
+    labels = add_labels_for(viewer, "DAPI")
+    assert tuple(labels.translate) == (0.0, 0.0)
+    assert labels.data.shape == (40, 30)  # small image: no downsampling
+
+
+def test_labels_inherit_the_images_placement(viewer):
+    viewer.layers["DAPI"].scale = (2.0, 2.0)
+    viewer.layers["DAPI"].translate = (5.0, 7.0)
+    labels = add_labels_for(viewer, "DAPI")
+    assert tuple(labels.scale) == (2.0, 2.0)
+    assert tuple(labels.translate) == (5.0, 7.0)
+
+
+def test_a_downsampled_layer_still_covers_the_whole_image(viewer):
+    labels = add_labels_for(viewer, "DAPI", factor=3)
+    covered = np.array(labels.data.shape) * 3
+    assert (covered >= (40, 30)).all()
+    assert tuple(labels.scale) == (3.0, 3.0)
+
+
+def test_an_oversized_image_gets_a_texture_safe_layer():
+    """A whole-slide Labels layer over the GPU texture limit is rendered
+    downsampled, and the polygon tool's preview then draws in the wrong
+    place — so the layer must not exceed the limit."""
+    viewer = ViewerModel()
+    viewer.add_image(np.zeros((4, 4), np.uint8), name="big")
+    labels = add_labels_for(viewer, "big", shape=(48960, 23040), limit=16384)
+    assert max(labels.data.shape) <= 16384
+    assert tuple(labels.scale) == (3.0, 3.0)
+
+
+def test_the_new_layer_is_selected_and_in_polygon_mode(viewer):
+    labels = add_labels_for(viewer, "DAPI")
+    assert viewer.layers.selection.active is labels
+    assert labels.mode == "polygon"
+
+
+def test_labels_are_small_by_default(viewer):
+    assert add_labels_for(viewer, "DAPI").data.dtype == np.uint8
+
+
+def test_a_wider_dtype_can_be_asked_for(viewer):
+    assert add_labels_for(viewer, "DAPI", dtype="uint16").data.dtype == np.uint16
+
+
+def test_a_second_call_replaces_the_previous_layer(viewer):
+    """Otherwise a session accumulates annotations-1, annotations-2 … and
+    the user paints into whichever happens to be selected."""
+    first = add_labels_for(viewer, "DAPI")
+    first.data[0, 0] = 1
+    second = add_labels_for(viewer, "DAPI")
+    assert [layer.name for layer in viewer.layers].count(second.name) == 1
+    assert second.data.sum() == 0
+
+
+def test_existing_labels_can_be_carried_over(viewer):
+    labels = add_labels_for(viewer, "DAPI", data=np.ones((40, 30), np.uint8))
+    assert labels.data.sum() == 40 * 30
+
+
+def test_carried_over_labels_must_match_the_layer_shape(viewer):
+    with pytest.raises(ValueError, match="shape"):
+        add_labels_for(viewer, "DAPI", data=np.ones((10, 10), np.uint8))
+
+
+def test_an_unknown_image_names_the_layers_that_exist(viewer):
+    with pytest.raises(KeyError, match="DAPI"):
+        add_labels_for(viewer, "CD8")
+
+
+def test_the_new_labels_button_makes_a_texture_safe_layer():
+    """napari's own button sizes a Labels layer to the full world extent,
+    which on a whole slide is three times the texture limit and renders
+    the polygon preview in the wrong place. The button is the thing to
+    fix; telling people to stop using it is not a fix."""
+    viewer = ViewerModel()
+    viewer.add_image(np.zeros((4, 4), np.uint8), name="slide", scale=(12240, 5760))
+    patch_new_labels(viewer, limit=16384)
+    viewer._new_labels()
+    labels = viewer.layers[-1]
+    assert max(labels.data.shape) <= 16384
+
+
+def test_the_new_labels_button_still_covers_the_whole_scene():
+    viewer = ViewerModel()
+    viewer.add_image(np.zeros((40000, 20000), np.uint8), name="slide")
+    patch_new_labels(viewer, limit=16384)
+    viewer._new_labels()
+    labels = viewer.layers[-1]
+    covered = np.array(labels.data.shape) * np.array(labels.scale)
+    assert (covered >= (40000, 20000)).all()
+
+
+def test_a_small_scene_still_gets_a_full_resolution_layer():
+    """Downsampling has a cost, so it must only happen when needed."""
+    viewer = ViewerModel()
+    viewer.add_image(np.zeros((100, 80), np.uint8), name="small")
+    patch_new_labels(viewer, limit=16384)
+    viewer._new_labels()
+    labels = viewer.layers[-1]
+    assert labels.data.shape == (100, 80)
+    assert tuple(labels.scale) == (1.0, 1.0)
+
+
+def test_patching_can_be_undone():
+    viewer = ViewerModel()
+    viewer.add_image(np.zeros((40000, 20000), np.uint8), name="slide")
+    restore = patch_new_labels(viewer, limit=16384)
+    restore()
+    viewer._new_labels()
+    assert max(viewer.layers[-1].data.shape) > 16384  # napari's own behaviour
+
+
+def test_the_default_limit_is_the_common_gpu_maximum():
+    assert DEFAULT_MAX_TEXTURE_SIZE == 16384

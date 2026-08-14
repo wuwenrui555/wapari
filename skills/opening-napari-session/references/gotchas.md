@@ -1,6 +1,6 @@
 # Traps
 
-Shared by every skill in this repository. Each of these fails silently or presents as a different problem, which is why they are written down rather than rediscovered.
+Shared by every skill in this repository. Each of these fails silently or presents as a different problem.
 
 ## Screenshots come back black on macOS
 
@@ -36,7 +36,53 @@ layer.data[layer.data == label] = 0
 layer.refresh()
 ```
 
-The two layer types answer opposite questions here, which is what makes it confusing: **Shapes gives you deletable objects but no undo; Labels gives you undo but nothing to delete.**
+Shapes gives you deletable objects but no undo; Labels gives you undo but nothing to delete.
+
+## Clicks land somewhere else: the layer is in transform mode
+
+Transform is one of the tools in the layer's toolbar, and in it a click-drag moves the whole layer instead of painting or drawing. The only sign is a blue box with square handles around the layer on the canvas — easy to miss on a dark image, and easy to enter by mis-keying.
+
+Press `2` for the brush, `3` for the polygon tool, `1` for the eraser, `4` for the fill bucket. The status bar lists these.
+
+If the layer really was dragged, do not rebuild it — that would throw away everything painted so far. Put it back where the image is, which leaves the data untouched:
+
+```python
+labels, image = viewer.layers["Labels"], viewer.layers["DAPI"]
+labels.translate, labels.scale, labels.rotate = image.translate, image.scale, 0
+```
+
+Before blaming geometry, check the mode: `layer.mode`. A misaligned Labels layer is a real and separate problem (napari/napari#5512, where a new Labels layer does not inherit the image's scale), but it is not the common cause.
+
+## The Labels polygon preview draws far from the cursor
+
+On a whole-slide Labels layer the polygon tool's preview, the in-progress outline with its white vertex handles, appears in a different part of the canvas from the clicks. The committed pixels land correctly, so the annotation is right and only the drawing is blind.
+
+The cause is the GPU texture limit. A layer larger than `GL_MAX_TEXTURE_SIZE` on any axis is downsampled before it is uploaded, and napari says so:
+
+```text
+UserWarning: data shape (24480, 11520) exceeds GL_MAX_TEXTURE_SIZE 16384
+in at least one axis and will be downsampled.
+```
+
+The polygon overlay does not follow that downsampling. Measured on a 48960 x 23040 slide against a 16384 limit:
+
+| labels array | over the limit | preview |
+| --- | --- | --- |
+| 48960 x 23040 | yes, by 3x | wrong |
+| 24480 x 11520 | yes | wrong |
+| 16320 x 7680 | no, by 64 px | correct |
+| 12240 x 5760 | no | correct |
+
+Ruled out along the way: the layer's transform, `corner_pixels`, zoom level, the number of layers, whether the image underneath is multiscale, and float32 vertex precision.
+
+napari's own new-labels button walks straight into this, because it sizes the layer to the whole scene at the finest step any layer uses. Fix the button rather than avoiding it:
+
+```python
+from wapari.annotate import patch_new_labels, gpu_texture_limit
+patch_new_labels(viewer, limit=gpu_texture_limit())
+```
+
+It then builds the finest layer that still fits, keeping it aligned through `scale`. On this slide that is 16320 x 7680: 3-pixel precision, fine for regions and wrong for cell-level work, and a 1.1 GB array becomes 125 MB.
 
 ## Select versus direct select
 
