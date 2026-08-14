@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "napari": {
+      "command": "uv",
+      "args": ["run", "--project", "/Users/wenruiwu/projects/wapari", "napari-mcp", "run"]
+    }
+  }
+}

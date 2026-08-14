@@ -36,5 +36,10 @@ ignore = ["E501"]  # line-length already handled by formatter
 [tool.ruff.format]
 quote-style = "double"
 
+[dependency-groups]
+dev = [
+    "napari-mcp>=0.1.0",
+]
+
 [tool.ruff.lint.per-file-ignores]
 "demo.py" = ["E402"]  # notebook-style script with %% cells
