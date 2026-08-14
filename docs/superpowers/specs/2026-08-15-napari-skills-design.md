@@ -1,7 +1,7 @@
 # napari agent skills for multiplexed imaging — design
 
 Date: 2026-08-15
-Status: approved, not yet implemented
+Status: implemented
 
 ## Problem
 
@@ -58,11 +58,13 @@ The interactive skill. Purpose first, markers second.
    - **Other**: functional and state markers.
 4. Ask what the user is doing — segmentation, annotation, or just looking — and add the markers for that purpose.
 
-Classification is **table plus judgement**:
+Classification is **table plus judgement**, implemented in `wapari.markers`:
 
-- Known markers come from a curated table in the package, so the same panel classifies identically every time.
+- Known markers come from a curated table in the package, so the same panel classifies identically every time. A marker carries a set of roles rather than one category, because PanCK both draws epithelial boundaries and identifies epithelium, and a single category would have to discard one of those.
 - Unknown markers are classified by the agent against the three criteria above, **proposed to the user, and confirmed before use**.
 - Confirmed answers are offered back to the table, which therefore improves with use.
+
+The seed table covers the 45-marker panel of the slide this was built against with nothing left unclassified.
 
 The segmentation group maps directly onto the nuclear + boundary marker combo that `CODEXSegmentationSkill` expects, so the two skill sets interoperate without a new format.
 
