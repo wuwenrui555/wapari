@@ -20,7 +20,7 @@ from wapari.image import open_image
 from wapari import markers
 
 image = open_image("<path>")
-first = markers.markers_for(image.channel_names, "segmentation")[0]  # DAPI, normally
+first = markers.nuclear_channel(image.channel_names)  # DAPI, or the first channel
 viewer.add_image(
     image.pyramid(first),
     name=first,
@@ -38,9 +38,9 @@ viewer.reset_view()
 
 `markers.describe(image.channel_names)` groups the panel into what each marker is for:
 
-- **segmentation** — the nuclear channel plus markers that draw cell boundaries. This is the pair a segmentation backend needs, and it maps directly onto the nuclear + boundary combo `CODEXSegmentationSkill` expects.
+- **segmentation** — the nuclear channel plus every marker that draws cell boundaries. A backend takes one nuclear channel and a set of boundary markers, which is what `markers.nuclear_channel` and `markers.boundary_markers` return separately.
 - **annotation** — lineage-specific markers, the ones that say what kind of cell this is.
-- **other** — functional and state markers: checkpoints, proliferation, metabolism. Real, but they describe a state rather than an identity.
+- **other** — functional and state markers. Real, but they describe a state rather than an identity.
 - **unknown** — not in the table yet.
 
 Show the user these groups, not a flat list of forty names. A marker can appear twice: PanCK both draws epithelial boundaries and identifies epithelium, and saying so is more useful than picking one.
@@ -104,7 +104,7 @@ viewer.add_image(
 )
 ```
 
-Naming a channel that is not in the panel raises a `KeyError` that lists the panel, so read it before telling the user the marker is missing — it is usually a spelling difference, and `markers.normalize` matches `PD-L1` to `PDL1` and strips conjugates like `-biotin`.
+`channel_index` takes an exact name first, then falls back to a normalised match, so `PDL1` finds a panel's `PD-L1` and `FAP` finds `FAP-biotin`. What it will not do is guess between two channels that normalise alike, which is what a multi-cycle panel's repeated DAPI looks like; it raises and asks for a position instead. A name that matches nothing raises a `KeyError` listing the panel.
 
 ## When to convert first
 

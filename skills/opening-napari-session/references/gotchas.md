@@ -111,6 +111,16 @@ tifffile only groups pages into one `Baseline` CYX series with pyramid levels wh
 
 Real qptiff pyramids are **flat sequential pages** — every channel at full resolution, then a thumbnail, then every channel at each sub-resolution — not subifds. A fixture built with subifds does not exercise the same code path.
 
+## An old environment reads OME-Zarr as nothing at all
+
+`napari-ome-zarr` and `ome-zarr` only work against zarr 3 from versions 0.10.0 and 0.18.0, and those need Python newer than 3.11. On 3.11 a resolver quietly picks two-year-old versions that fail to import at all:
+
+```text
+ImportError: cannot import name 'FSStore' from 'zarr.storage'
+```
+
+The message names zarr, so the reflex is to change the zarr pin, which makes it worse. Check the Python version first.
+
 ## AF_UNIX socket paths are short
 
 The operating system caps them at 104 bytes on macOS and 108 on Linux, and reports only `OSError: AF_UNIX path too long`. A path inside a deep project directory, or a pytest `tmp_path`, can exceed it.
