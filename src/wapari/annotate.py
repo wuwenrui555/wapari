@@ -33,9 +33,9 @@ array                over the limit     memory    preview
 
 Full resolution costs memory; a downsampled layer costs annotation
 precision, 3 pixels on this slide against a median cell diameter of
-about 17. :func:`add_labels_for` picks the finest layer that still fits
-unless ``factor`` says otherwise, and `scale` keeps it aligned to the
-image it annotates.
+about 17. :func:`add_labels_for` matches the image unless ``factor``
+asks for the other side of that trade, and `scale` keeps the layer
+aligned either way.
 """
 
 import numpy as np
@@ -64,7 +64,7 @@ def gpu_texture_limit() -> int:
     Requires a live OpenGL context. Calling it without one takes the
     process down rather than raising, so this is never called on the
     library's own path. A caller that already has a viewer on screen can
-    pass the result to :func:`add_labels_for` as ``limit``.
+    pass the result to :func:`texture_safe_factor`.
     """
     from vispy.gloo import gl
 
@@ -76,13 +76,12 @@ def add_labels_for(
     image,
     *,
     name: str = "annotations",
-    factor: int | None = None,
+    factor: int = 1,
     shape: tuple[int, int] | None = None,
     data: np.ndarray | None = None,
     dtype: str = "uint8",
-    limit: int | None = None,
 ):
-    """Add a Labels layer aligned to an image and safe to draw on.
+    """Add a Labels layer aligned to an image.
 
     Parameters
     ----------
@@ -94,9 +93,12 @@ def add_labels_for(
     name : str
         Layer name. An existing layer of this name is replaced, so a
         session does not accumulate annotations-1, annotations-2, …
-    factor : int, optional
-        Downsampling factor. By default the finest one that keeps every
-        axis within the GPU texture limit.
+    factor : int
+        Downsample the layer by this much. 1, the default, matches the
+        image. A layer past the GPU texture limit is rendered downsampled
+        either way, so this only trades annotation precision for memory;
+        :func:`texture_safe_factor` gives the smallest step that avoids
+        the limit for anyone who wants that trade.
     shape : tuple, optional
         Full-resolution shape to cover. Defaults to the image's own.
     data : numpy.ndarray, optional
@@ -104,10 +106,6 @@ def add_labels_for(
     dtype : str
         Label dtype. uint8 holds 255 regions in a quarter of the memory
         napari's own default would use.
-    limit : int, optional
-        Maximum texture size, defaulting to the common 16384. Pass
-        :func:`gpu_texture_limit` when a viewer is already on screen and
-        the device might report less.
 
     Returns
     -------
@@ -126,11 +124,6 @@ def add_labels_for(
     if shape is None:
         first = image.data[0] if isinstance(image.data, list) else image.data
         shape = tuple(first.shape[-2:])
-    if limit is None:
-        limit = DEFAULT_MAX_TEXTURE_SIZE
-    if factor is None:
-        factor = texture_safe_factor(shape, limit)
-
     # Round up, so the layer covers the last partial row and column
     # rather than leaving a sliver of the image un-annotatable.
     reduced = tuple(-(-length // factor) for length in shape)
