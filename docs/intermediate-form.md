@@ -20,6 +20,8 @@ NGFF 0.4 stored the same metadata as top-level `multiscales` and `omero` keys in
 
 The group holds one array per pyramid level, named `"0"`, `"1"`, … from finest to coarsest. Every array is `(c, y, x)`.
 
+Every array also carries `dimension_names` of `("c", "y", "x")` in its own zarr metadata, matching the group's `axes`. This is a zarr v3 field and NGFF 0.5 requires it; a store without it is not conformant, and the validator below rejects it. Writing `axes` alone is the mistake to watch for, because everything reads correctly without `dimension_names` right up until something validates.
+
 Levels are **copied from the source, never recomputed**. A vendor pyramid is what the microscope and its software produced; regenerating it would substitute our resampling for theirs and make two files that should be identical differ.
 
 ## Where each thing lives
@@ -30,6 +32,7 @@ Levels are **copied from the source, never recomputed**. A vendor pyramid is wha
 | Pixel size | `attributes.ome.multiscales[0].datasets[].coordinateTransformations[].scale`, per level |
 | Axis order and units | `attributes.ome.multiscales[0].axes` |
 | Pyramid levels | `attributes.ome.multiscales[0].datasets[].path` |
+| Axis names, again | `dimension_names` on each array's own zarr metadata, agreeing with `axes` |
 | Rendering defaults | `attributes.ome.omero.channels[].window` and `.color` and `.active` |
 | Provenance | `attributes.wapari`, described below |
 
@@ -114,7 +117,21 @@ for y0, x0, tile in tiles(root, names, "HLA1"):
 
 ## Writing it
 
-Any writer that produces this form compares the written pixels against the source before reporting success. Corruption in this ecosystem is silent, produces a plausible file size and well-formed metadata, and never raises. `wapari.convert.verify_conversion` is the existing implementation of that check.
+Three things are checked, and where each is checked follows from how it can go wrong.
+
+| Check | Where | Why there |
+| --- | --- | --- |
+| pixels match the source | every write | data-dependent and silent: the same code writes a good file from one input and a corrupt one from the next |
+| every channel has a name | every write | data-dependent: it depends on what the source carried and on what the pipeline dropped |
+| the store is conformant NGFF | tests | code-dependent: a writer either emits the right keys or it does not, and that does not vary with the data |
+
+Pixel comparison is `wapari.convert.verify_conversion`. Corruption in this ecosystem is silent, produces a plausible file size and well-formed metadata, and never raises.
+
+Channel names are checked at write time because NGFF does not require them and this pipeline cannot work without them. A 45-channel store with no `omero` at all is valid NGFF and useless here.
+
+Conformance is checked in tests with `ome-zarr-models`, which models NGFF as pydantic types. Measured against deliberately broken stores, it rejects a missing `dimension_names`, `dimension_names` that disagree with `axes`, a missing version, pyramid levels ordered coarse-to-fine, a missing axis, a `scale` of the wrong length, and a `datasets` entry pointing at an array that is not there. It accepts a store whose channels have no `label`, which is why that one is checked separately at write time rather than left to the validator.
+
+The fixture that conformance is checked against must have more than one level and more than one channel. With one of each, the loops that build `datasets` and `channels` never run more than once, and "the writer is either right or wrong for all data" stops being true of the thing that was tested.
 
 ## Known limitation: napari-ome-zarr discards the pyramid
 
