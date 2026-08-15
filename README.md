@@ -39,6 +39,10 @@ Segmentation means DAPI plus membrane markers; annotation means the lineage-spec
 
 Answered from the file's own metadata, without opening a viewer.
 
+**Drop a slide on the window.**
+
+Dragging an OME-Zarr onto napari parses it and asks which markers to put up, so a 45-channel slide arrives as the two or three you wanted rather than as 45 layers. Run `wapari.napari_reader.prefer_wapari()` once first: napari's builtin reader also claims `*.zarr`, and without a preference napari asks which reader to use before it can ask anything else.
+
 **Convert for repeated access.**
 
 > Convert this qptiff to OME-Zarr.
@@ -68,7 +72,7 @@ The bridge is the clearest case: it listens on a socket and executes what it rec
 
 ## Installation
 
-Requires Python 3.12 or newer (`napari-ome-zarr` and `ome-zarr` only support zarr 3 from versions 0.10.0 / 0.18.0, and those need >3.11).
+Requires Python 3.12 or newer. napari 0.8 and zarr 3 both accept 3.11; 3.12 is this project's own floor.
 
 ```bash
 git clone https://github.com/wuwenrui555/wapari.git

@@ -242,3 +242,102 @@ def test_a_single_plane_tiff_can_be_displayed(tmp_path):
     image = open_image(path)
     assert len(image.pyramid("channel_0")) == 1
     assert image.contrast_limits("channel_0")[1] > 0
+
+
+def _ngff05_zarr(path, channels=None, shape=(3, 8, 8), levels=2):
+    """A store in the intermediate form: NGFF 0.5 on zarr v3."""
+    root = zarr.open_group(str(path), mode="w", zarr_format=3)
+    datasets = []
+    for i in range(levels):
+        level = (shape[0], shape[1] // 2**i, shape[2] // 2**i)
+        root.create_array(
+            str(i), shape=level, dtype="uint16", dimension_names=("c", "y", "x")
+        )
+        datasets.append(
+            {
+                "path": str(i),
+                "coordinateTransformations": [
+                    {"type": "scale", "scale": [1.0, 0.5 * 2**i, 0.5 * 2**i]}
+                ],
+            }
+        )
+    ome = {
+        "version": "0.5",
+        "multiscales": [
+            {
+                "name": "probe",
+                "axes": [
+                    {"name": "c", "type": "channel"},
+                    {"name": "y", "type": "space", "unit": "micrometer"},
+                    {"name": "x", "type": "space", "unit": "micrometer"},
+                ],
+                "datasets": datasets,
+            }
+        ],
+    }
+    if channels is not None:
+        ome["omero"] = {"channels": channels}
+    root.attrs["ome"] = ome
+    return path
+
+
+def test_opens_an_ngff_05_store(tmp_path):
+    """0.5 moves everything under an `ome` key, and the whole slide this
+    package converted earlier is still 0.4, so both have to open."""
+    path = _ngff05_zarr(
+        tmp_path / "v05.ome.zarr",
+        channels=[{"label": n} for n in ("DAPI", "CD8", "HLA1")],
+    )
+    image = open_image(path)
+    assert image.channel_names == ["DAPI", "CD8", "HLA1"]
+    assert len(image.levels) == 2
+    assert image.pixel_size_um == 0.5
+
+
+def test_the_recorded_contrast_window_is_reported(tmp_path):
+    """convert.py has been writing these since the beginning and nothing
+    has read them; the reader is what makes them mean something."""
+    path = _ngff05_zarr(
+        tmp_path / "window.ome.zarr",
+        channels=[
+            {"label": "DAPI", "window": {"start": 0.0, "end": 14737.0}},
+            {"label": "CD8"},
+            {"label": "HLA1", "window": {"start": 10.0, "end": 300.0}},
+        ],
+    )
+    image = open_image(path)
+    assert image.channel_windows == [(0.0, 14737.0), None, (10.0, 300.0)]
+
+
+def test_the_recorded_channel_colour_is_reported(tmp_path):
+    path = _ngff05_zarr(
+        tmp_path / "colour.ome.zarr",
+        channels=[
+            {"label": "DAPI", "color": "0000FF"},
+            {"label": "CD8"},
+            {"label": "HLA1", "color": "00FF00"},
+        ],
+    )
+    assert open_image(path).channel_colors == ["0000FF", None, "00FF00"]
+
+
+def test_a_store_with_no_omero_reports_no_defaults(tmp_path):
+    path = _ngff05_zarr(tmp_path / "bare.ome.zarr", channels=None)
+    image = open_image(path)
+    assert image.channel_windows == [None, None, None]
+    assert image.channel_colors == [None, None, None]
+
+
+def test_an_ngff_04_store_still_reports_its_defaults(tmp_path):
+    """The whole-slide conversion already on disk is 0.4."""
+    path = _bare_zarr(
+        tmp_path / "v04.ome.zarr",
+        channels=[
+            {"label": "DAPI", "color": "FFFFFF", "window": {"start": 0.0, "end": 99.0}},
+            {"label": "CD8"},
+            {"label": "HLA1"},
+        ],
+    )
+    image = open_image(path)
+    assert image.channel_windows[0] == (0.0, 99.0)
+    assert image.channel_colors[0] == "FFFFFF"

@@ -30,6 +30,13 @@ class Image:
         One lazy (C, Y, X) array per pyramid level, largest first.
     pixel_size_um : float or None
         Size of a level 0 pixel in micrometers, if the file records it.
+    channel_windows : list
+        One ``(low, high)`` per channel, or None where the file records
+        no window. These are display defaults the file carries, not
+        measurements of the data.
+    channel_colors : list
+        One ``"RRGGBB"`` per channel, or None where the file records no
+        colour.
     """
 
     def __init__(
@@ -39,11 +46,15 @@ class Image:
         levels: list,
         pixel_size_um: float | None,
         handle=None,
+        channel_windows: list | None = None,
+        channel_colors: list | None = None,
     ) -> None:
         self.path = path
         self.channel_names = channel_names
         self.levels = levels
         self.pixel_size_um = pixel_size_um
+        self.channel_windows = channel_windows or [None] * len(channel_names)
+        self.channel_colors = channel_colors or [None] * len(channel_names)
         # A qptiff's levels read from an open TiffFile, so it stays open
         # for the life of the image and is closed here.
         self._handle = handle
@@ -261,17 +272,28 @@ def _open_tiff(path: pathlib.Path) -> Image:
 
 def _open_ome_zarr(path: pathlib.Path) -> Image:
     root = zarr.open_group(str(path), mode="r")
-    multiscales = root.attrs["multiscales"][0]
+
+    # NGFF 0.5 puts everything under `ome`; 0.4 keeps it at the top of
+    # the group's attributes. Reading both costs three lines, and the
+    # whole-slide conversions already on disk are 0.4.
+    attrs = root.attrs.get("ome", root.attrs)
+    multiscales = attrs["multiscales"][0]
     levels = [root[dataset["path"]] for dataset in multiscales["datasets"]]
 
     # `label` is optional in NGFF omero, and a writer may name only some
     # channels, so positions fill in for whatever is missing rather than
     # the panel coming back short.
     count = levels[0].shape[0]
-    channels = root.attrs.get("omero", {}).get("channels", [])
+    channels = attrs.get("omero", {}).get("channels", [])
     names = [
         (channels[i].get("label") if i < len(channels) else None) or f"channel_{i}"
         for i in range(count)
+    ]
+    windows = [
+        _window(channels[i]) if i < len(channels) else None for i in range(count)
+    ]
+    colors = [
+        (channels[i].get("color") if i < len(channels) else None) for i in range(count)
     ]
 
     pixel_size = None
@@ -280,7 +302,22 @@ def _open_ome_zarr(path: pathlib.Path) -> Image:
         scale = transformations[0].get("scale")
         if scale:
             pixel_size = float(scale[-1])
-    return Image(path, names, levels, pixel_size)
+    return Image(
+        path,
+        names,
+        levels,
+        pixel_size,
+        channel_windows=windows,
+        channel_colors=colors,
+    )
+
+
+def _window(channel: dict) -> tuple[float, float] | None:
+    """Read one omero contrast window, or None if it is not recorded."""
+    window = channel.get("window")
+    if not window or "start" not in window or "end" not in window:
+        return None
+    return float(window["start"]), float(window["end"])
 
 
 def open_image(path: str | pathlib.Path) -> Image:

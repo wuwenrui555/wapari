@@ -97,6 +97,17 @@ A napari reader is a function from a path to layers, and the agent's `viewer.ope
 
 So the reader asks only when a person dropped the file. A module-level flag turns the dialog off, and the agent uses `add_channels` with the markers it already decided on. With the dialog off the reader adds the first channel alone, which is the behaviour `README.md` already describes: one channel goes up first, so you see tissue rather than a wall of colour.
 
+### napari's builtin reader claims `*.zarr` too
+
+Found while wiring this up, and it changes what a drag does. napari's own reader registers `*.zarr`, a plugin cannot outrank it, and with two readers matching, dropping a store asks which reader to use before it can ask which markers to put up. Worse, the builtin reads the store as a bare directory of arrays: it picks up `extras` alongside the pyramid, hands napari levels in key order, and napari refuses them with `arrays in incorrect order`.
+
+The tie is settled by `settings.plugins.extension2reader`, which `prefer_wapari()` writes. Two details are not guessable:
+
+- The pattern must end in a separator. napari appends one to a directory before matching, so `*.zarr` never matches a store and `*.zarr/` always does.
+- `ViewerModel.open()` does not consult the preference at all; only `_open_or_raise_error`, the path a drag takes, does. So the preference fixes dragging and does nothing for `viewer.open()`, which is another reason the agent path goes through `add_channels`.
+
+Because it writes the user's napari settings, `prefer_wapari()` is never called by the library on its own.
+
 ### Reading is liberal, writing is strict
 
 The reader accepts NGFF 0.4 and 0.5. `image.py` looks for `attrs["ome"]` first and falls back to the top-level `multiscales` and `omero` of a 0.4 store, so the existing whole-slide conversion opens without being migrated first. Only 0.5 is written.

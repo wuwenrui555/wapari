@@ -51,7 +51,7 @@ from wapari.image import open_image
 image = open_image("<slide>.ome.zarr")
 ```
 
-The output is standard NGFF 0.4, so QuPath, Fiji and `ome-zarr` read it too. `napari-ome-zarr` needs Python 3.12 or newer to work against zarr 3; an older environment fails with an ImportError that names zarr rather than Python, which is covered in `../opening-napari-session/references/gotchas.md`.
+The output is standard NGFF 0.4, so QuPath, Fiji and `ome-zarr` read it too, and `ome-zarr-models` validates it as conformant. wapari reads it through `wapari.image.open_image`, or by dragging the directory onto a napari window, which asks which markers to put up.
 
 ## Other formats
 

@@ -147,13 +147,30 @@ Real qptiff pyramids are **flat sequential pages** — every channel at full res
 
 ## An old environment reads OME-Zarr as nothing at all
 
-`napari-ome-zarr` and `ome-zarr` only work against zarr 3 from versions 0.10.0 and 0.18.0, and those need Python newer than 3.11. On 3.11 a resolver quietly picks two-year-old versions that fail to import at all:
+No longer reachable from this repository, which stopped depending on `napari-ome-zarr` and `ome-zarr`. Kept because the shape of the mistake is the transferable part.
+
+Those packages only work against zarr 3 from versions 0.10.0 and 0.18.0, and those need Python newer than 3.11. On 3.11 a resolver quietly picks two-year-old versions that fail to import at all:
 
 ```text
 ImportError: cannot import name 'FSStore' from 'zarr.storage'
 ```
 
-The message names zarr, so the reflex is to change the zarr pin, which makes it worse. Check the Python version first.
+The message names zarr, so the reflex is to change the zarr pin, which makes it worse. Check the Python version first. The general form: when a package's own dependency floor is unreachable on the running interpreter, the resolver does not say so, it silently picks something ancient, and the failure surfaces as a name error inside a package nobody pinned.
+
+## napari-ome-zarr hands back level 0 alone
+
+Opening an OME-Zarr with `napari-ome-zarr` gives one layer per channel, and each of those layers has **only the full-resolution level**, whatever the store holds. Nothing warns. It looks like it worked, because the image is there.
+
+Measured on a 45-channel 48960 x 23040 slide whose store holds six pyramid levels, with `napari-ome-zarr` 0.10.0:
+
+| opened with | levels the layer carries |
+| --- | --- |
+| `napari-ome-zarr` | 1 |
+| `wapari.image.open_image().pyramid()` | 6 |
+
+An NGFF 0.4 store and an NGFF 0.5 store behave the same way, and so does a store small enough to fit the texture limit, so it is the plugin's channel-splitting path rather than the version or the size.
+
+The cost is easy to miss and constant: every pan and zoom reads full-resolution tiles, and a layer past `GL_MAX_TEXTURE_SIZE` is downsampled by the GPU for display, so the detail is not on screen either. Drag the store onto a window instead, which this repository's own reader answers, or call `wapari.display.add_channels`.
 
 ## Automatic layer behaviour has to leave the checkbox working
 
