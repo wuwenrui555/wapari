@@ -12,10 +12,9 @@ dependencies = [
     "imagecodecs>=2025.3.30",
     "ipykernel>=6.0",
     "matplotlib>=3.10.7",
-    "napari>=0.8.0",
+    "napari[pyqt6]>=0.8.0",
     "napari-ome-zarr>=0.10.0",
     "ome-zarr>=0.18.0",
-    "pyqt5>=5.15.11",
     "zarr>=3",
 ]
 

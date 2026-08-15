@@ -99,7 +99,7 @@ Traps are documented once, in `skills/opening-napari-session/references/gotchas.
 
 napari lacks conveniences QuPath users take for granted — hide or show every layer at once, turn the current shape into a mask, crop to it. Raised 2026-08-15, to be designed separately.
 
-The boundary rule already answers where they go. A "hide all layers" button is useful to someone clicking it by hand, so it is package, not skill. Since wapari already depends on napari and PyQt5, declaring npe2 entry points costs nothing extra, and `pip install wapari` then ships the widgets with the library — no separate plugin distribution, no version to keep in step, no install instructions for an agent to recite.
+The boundary rule already answers where they go. A "hide all layers" button is useful to someone clicking it by hand, so it is package, not skill. Since wapari already depends on napari and Qt, declaring npe2 entry points costs nothing extra, and `pip install wapari` then ships the widgets with the library — no separate plugin distribution, no version to keep in step, no install instructions for an agent to recite.
 
 Two tiers, split by lifetime rather than by technology:
 
