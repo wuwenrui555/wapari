@@ -68,15 +68,21 @@ def test_a_downsampled_layer_still_covers_the_whole_image(viewer):
     assert tuple(labels.scale) == (3.0, 3.0)
 
 
-def test_an_oversized_image_gets_a_texture_safe_layer():
-    """A whole-slide Labels layer over the GPU texture limit is rendered
-    downsampled, and the polygon tool's preview then draws in the wrong
-    place — so the layer must not exceed the limit."""
-    viewer = ViewerModel()
-    viewer.add_image(np.zeros((4, 4), np.uint8), name="big")
-    labels = add_labels_for(viewer, "big", shape=(48960, 23040), limit=16384)
-    assert max(labels.data.shape) <= 16384
-    assert tuple(labels.scale) == (3.0, 3.0)
+def test_an_oversized_image_is_not_downsampled(viewer):
+    """Going over the GPU texture limit costs memory and nothing else:
+    since napari 0.7.0 the polygon preview is correct at any size. Losing
+    annotation precision to save memory is the caller's call, not this
+    function's, so the layer matches the image."""
+    labels = add_labels_for(viewer, "DAPI", shape=(16385, 100))
+    assert labels.data.shape == (16385, 100)
+    assert tuple(labels.scale) == (1.0, 1.0)
+
+
+def test_a_texture_safe_layer_can_still_be_asked_for(viewer):
+    factor = texture_safe_factor((16385, 100))
+    labels = add_labels_for(viewer, "DAPI", shape=(16385, 100), factor=factor)
+    assert max(labels.data.shape) <= DEFAULT_MAX_TEXTURE_SIZE
+    assert tuple(labels.scale) == (2.0, 2.0)
 
 
 def test_the_new_layer_is_selected_and_in_polygon_mode(viewer):
