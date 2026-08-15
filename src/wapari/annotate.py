@@ -1,12 +1,13 @@
-"""Labels layers that are safe to draw on.
+"""Labels layers aligned to the image they annotate.
 
 A layer larger than the GPU's maximum texture size is downsampled by
-napari before it is uploaded, with a warning, and the Labels polygon
-tool's preview does not follow that downsampling. The outline then
-appears somewhere other than the cursor while the committed pixels land
-correctly, which makes the tool unusable by eye.
+napari before it is uploaded, with a warning. Up to napari 0.6.x the
+Labels polygon tool's preview did not follow that downsampling, so the
+outline appeared somewhere other than the cursor while the committed
+pixels landed correctly, which made the tool unusable by eye. That was
+napari/napari#7862, fixed by napari/napari#8563 and released in 0.7.0.
 
-Measured on a 48960 x 23040 slide against a 16384 limit:
+Measured then, on a 48960 x 23040 slide against a 16384 limit:
 
 ===================  =================  =======
 array                over the limit     preview
@@ -17,8 +18,24 @@ array                over the limit     preview
 12240 x 5760         no                 correct
 ===================  =================  =======
 
-So a Labels layer is created at the finest resolution that still fits,
-and `scale` keeps it aligned to the image it annotates.
+Re-measured on napari 0.8.0, the preview is correct at every one of
+those sizes, so what remains is a memory trade rather than a
+correctness one:
+
+===================  =================  ========  =======
+array                over the limit     memory    preview
+===================  =================  ========  =======
+48960 x 23040        yes, by 3x         1128 MB   correct
+24480 x 11520        yes, by 2x          282 MB   correct
+16320 x 7680         no, by 64 px        125 MB   correct
+12240 x 5760         no                   71 MB   correct
+===================  =================  ========  =======
+
+Full resolution costs memory; a downsampled layer costs annotation
+precision, 3 pixels on this slide against a median cell diameter of
+about 17. :func:`add_labels_for` picks the finest layer that still fits
+unless ``factor`` says otherwise, and `scale` keeps it aligned to the
+image it annotates.
 """
 
 import numpy as np
@@ -52,71 +69,6 @@ def gpu_texture_limit() -> int:
     from vispy.gloo import gl
 
     return int(gl.glGetParameter(gl.GL_MAX_TEXTURE_SIZE))
-
-
-def patch_new_labels(viewer, limit: int | None = None):
-    """Make the viewer's new-labels button produce a usable layer.
-
-    napari sizes a new Labels layer to the whole scene at the finest step
-    any layer uses, which on a whole slide is several times the texture
-    limit. The button then hands back a layer whose polygon preview draws
-    in the wrong place. This keeps the button and fixes what it builds.
-
-    Returns a callable that puts napari's own version back.
-    """
-    if limit is None:
-        limit = DEFAULT_MAX_TEXTURE_SIZE
-    original = viewer._new_labels
-
-    def new_labels() -> None:
-        extent = viewer.layers.extent
-        step = np.asarray(extent.step)
-        corner = np.asarray(extent.world[0])
-        span = np.asarray(extent.world[1]) - corner
-        shape = np.round(span / step).astype(int) + 1
-        factor = texture_safe_factor(shape, limit)
-        reduced = tuple(-(-int(length) // factor) for length in shape)
-        viewer.add_labels(
-            np.zeros(reduced, dtype="uint8"),
-            scale=tuple(step * factor),
-            translate=tuple(corner),
-        )
-
-    object.__setattr__(viewer, "_new_labels", new_labels)
-    rewired = _rewire_new_labels_button(viewer, new_labels, original)
-
-    def restore() -> None:
-        object.__setattr__(viewer, "_new_labels", original)
-        rewired(original, new_labels)
-
-    return restore
-
-
-def _rewire_new_labels_button(viewer, new_labels, original):
-    """Point the toolbar button at ``new_labels``.
-
-    Replacing the method is not enough: the button connects to the bound
-    method when it is built, so it keeps calling whatever was there at
-    that moment. Returns a callable that swaps the connection back.
-    """
-
-    def swap(connect, disconnect):
-        try:
-            from qtpy.QtWidgets import QPushButton
-
-            window = viewer.window._qt_window
-        except (AttributeError, ImportError):
-            return  # a ViewerModel has no window, which is fine
-        for button in window.findChildren(QPushButton):
-            if "new labels layer" in button.toolTip().lower():
-                try:
-                    button.clicked.disconnect(disconnect)
-                except (TypeError, RuntimeError):
-                    button.clicked.disconnect()
-                button.clicked.connect(lambda *_: connect())
-
-    swap(new_labels, original)
-    return swap
 
 
 def add_labels_for(

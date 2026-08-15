@@ -53,9 +53,11 @@ labels.translate, labels.scale, labels.rotate = image.translate, image.scale, 0
 
 Before blaming geometry, check the mode: `layer.mode`. A misaligned Labels layer is a real and separate problem (napari/napari#5512, where a new Labels layer does not inherit the image's scale), but it is not the common cause.
 
-## The Labels polygon preview draws far from the cursor
+## The Labels polygon preview draws far from the cursor (napari 0.6.x and earlier)
 
-On a whole-slide Labels layer the polygon tool's preview, the in-progress outline with its white vertex handles, appears in a different part of the canvas from the clicks. The committed pixels land correctly, so the annotation is right and only the drawing is blind.
+Fixed upstream. On napari 0.7.0 and later this section is history; it is kept because the symptom is baffling, the diagnosis was expensive, and anyone pinned to an older napari still meets it.
+
+On a whole-slide Labels layer the polygon tool's preview, the in-progress outline with its white vertex handles, appeared in a different part of the canvas from the clicks. The committed pixels landed correctly, so the annotation was right and only the drawing was blind.
 
 The cause is the GPU texture limit. A layer larger than `GL_MAX_TEXTURE_SIZE` on any axis is downsampled before it is uploaded, and napari says so:
 
@@ -64,7 +66,7 @@ UserWarning: data shape (24480, 11520) exceeds GL_MAX_TEXTURE_SIZE 16384
 in at least one axis and will be downsampled.
 ```
 
-The polygon overlay does not follow that downsampling. Measured on a 48960 x 23040 slide against a 16384 limit:
+The polygon overlay did not follow that downsampling. Measured on a 48960 x 23040 slide against a 16384 limit, under napari 0.6.5:
 
 | labels array | over the limit | preview |
 | --- | --- | --- |
@@ -75,14 +77,46 @@ The polygon overlay does not follow that downsampling. Measured on a 48960 x 230
 
 Ruled out along the way: the layer's transform, `corner_pixels`, zoom level, the number of layers, whether the image underneath is multiscale, and float32 vertex precision.
 
-napari's own new-labels button walks straight into this, because it sizes the layer to the whole scene at the finest step any layer uses. Fix the button rather than avoiding it:
+This is napari/napari#7862, reported by a napari maintainer in April 2025 and fixed by napari/napari#8563, released in 0.7.0. The fix applies the layer's `tile2data` inverse transform to the overlay's points, which is exactly the missing step the table above points at.
+
+The misplacement can be measured without touching the mouse, which is worth knowing because the obvious reading is that it needs a real pointer. Set the overlay's points in data coordinates and read back what vispy was told to draw. Re-measured on napari 0.8.0, all four sizes above now come out correct:
 
 ```python
-from wapari.annotate import patch_new_labels, gpu_texture_limit
-patch_new_labels(viewer, limit=gpu_texture_limit())
+import numpy as np
+from napari._vispy.overlays.labels_polygon import VispyLabelsPolygonOverlay
+
+layer = viewer.add_labels(np.zeros((20000, 4000), np.uint8))
+layer.mode = "polygon"
+visual = next(
+    v
+    for v in viewer.window._qt_viewer.canvas._layer_overlay_to_visual[layer].values()
+    if isinstance(v, VispyLabelsPolygonOverlay)
+)
+
+points = [[10000.0, 1000.0], [10000.0, 2000.0], [15000.0, 2000.0]]
+layer._overlays["polygon"].points = points
+
+downsample = np.asarray(layer._transforms["tile2data"].scale)
+drawn = visual._nodes._data["a_position"][:, :2]
+np.testing.assert_allclose(drawn, np.array(points)[:, ::-1] / downsample[::-1], atol=0.5)
 ```
 
-It then builds the finest layer that still fits, keeping it aligned through `scale`. On this slide that is 16320 x 7680: 3-pixel precision, fine for regions and wrong for cell-level work, and a 1.1 GB array becomes 125 MB.
+What survives the fix is a memory question rather than a correctness one. napari's new-labels button still sizes the layer to the image's full resolution, so on this slide it builds a 1.1 GB array that the GPU then downsamples anyway (napari/napari#7863, still open). `wapari.annotate.add_labels_for` takes a `factor` for that trade: full resolution costs memory, and a downsampled layer costs annotation precision, 3 pixels here against a median cell diameter of about 17.
+
+## uv keeps the old version rather than reporting a blocked upgrade
+
+`uv lock --upgrade-package napari` printed `Resolved 204 packages` and changed nothing at all, no diff and no warning. The upgrade was blocked, and saying so is not part of what the command does.
+
+The chain took a while to see: napari 0.8.0 requires `napari-console>=0.1.4`, which caps `ipykernel<7`, and this project declared `ipykernel>=7.1.0`. With no version of napari able to satisfy that, the resolver kept 0.6.5 and reported success.
+
+The way to make it talk is to demand the version you want and let resolution fail:
+
+```bash
+# temporarily, in pyproject.toml: napari>=0.8.0
+uv lock
+```
+
+It then names the conflict in full. The general shape is worth remembering: a silent no-op from `--upgrade-package` means blocked, not up to date, and the constraint doing the blocking is often one of your own rather than anything the package you are upgrading declares.
 
 ## Select versus direct select
 
