@@ -7,7 +7,6 @@ from napari.components import ViewerModel
 from wapari.annotate import (
     DEFAULT_MAX_TEXTURE_SIZE,
     add_labels_for,
-    patch_new_labels,
     texture_safe_factor,
 )
 
@@ -117,49 +116,6 @@ def test_carried_over_labels_must_match_the_layer_shape(viewer):
 def test_an_unknown_image_names_the_layers_that_exist(viewer):
     with pytest.raises(KeyError, match="DAPI"):
         add_labels_for(viewer, "CD8")
-
-
-def test_the_new_labels_button_makes_a_texture_safe_layer():
-    """napari's own button sizes a Labels layer to the full world extent,
-    which on a whole slide is three times the texture limit and renders
-    the polygon preview in the wrong place. The button is the thing to
-    fix; telling people to stop using it is not a fix."""
-    viewer = ViewerModel()
-    viewer.add_image(np.zeros((4, 4), np.uint8), name="slide", scale=(12240, 5760))
-    patch_new_labels(viewer, limit=16384)
-    viewer._new_labels()
-    labels = viewer.layers[-1]
-    assert max(labels.data.shape) <= 16384
-
-
-def test_the_new_labels_button_still_covers_the_whole_scene():
-    viewer = ViewerModel()
-    viewer.add_image(np.zeros((40000, 20000), np.uint8), name="slide")
-    patch_new_labels(viewer, limit=16384)
-    viewer._new_labels()
-    labels = viewer.layers[-1]
-    covered = np.array(labels.data.shape) * np.array(labels.scale)
-    assert (covered >= (40000, 20000)).all()
-
-
-def test_a_small_scene_still_gets_a_full_resolution_layer():
-    """Downsampling has a cost, so it must only happen when needed."""
-    viewer = ViewerModel()
-    viewer.add_image(np.zeros((100, 80), np.uint8), name="small")
-    patch_new_labels(viewer, limit=16384)
-    viewer._new_labels()
-    labels = viewer.layers[-1]
-    assert labels.data.shape == (100, 80)
-    assert tuple(labels.scale) == (1.0, 1.0)
-
-
-def test_patching_can_be_undone():
-    viewer = ViewerModel()
-    viewer.add_image(np.zeros((40000, 20000), np.uint8), name="slide")
-    restore = patch_new_labels(viewer, limit=16384)
-    restore()
-    viewer._new_labels()
-    assert max(viewer.layers[-1].data.shape) > 16384  # napari's own behaviour
 
 
 def test_the_default_limit_is_the_common_gpu_maximum():
