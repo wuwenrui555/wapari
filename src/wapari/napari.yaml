@@ -1,0 +1,11 @@
+name: wapari
+display_name: WapaRi
+contributions:
+  commands:
+    - id: wapari.get_reader
+      title: Open a multiplexed slide
+      python_name: wapari.napari_reader:napari_get_reader
+  readers:
+    - command: wapari.get_reader
+      filename_patterns: ["*.zarr"]
+      accepts_directories: true

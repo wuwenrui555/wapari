@@ -191,13 +191,40 @@ def test_verify_detects_corrupted_pixels(qptiff, tmp_path):
         verify_conversion(path, out)
 
 
-def test_readable_by_ome_zarr_reader(converted, n_levels):
-    """The output must be recognized by the ome-zarr ecosystem reader."""
-    from ome_zarr.io import parse_url
-    from ome_zarr.reader import Reader
+def test_the_output_is_conformant_ngff(
+    converted, n_levels, channel_names, pixel_size_um
+):
+    """The one assertion here that we did not write.
+
+    Every other test compares this writer against this package's reader,
+    and both were built from one reading of the NGFF spec, so a
+    misreading passes all of them and still produces a file nobody else
+    can open. `ome-zarr-models` models the spec as pydantic types, so it
+    rejects a store that is merely readable.
+
+    The fixture has several levels and several channels on purpose. The
+    loops that emit `datasets` and `channels` are the parts that could
+    differ between one and many, and with one of each they never run
+    twice.
+    """
+    import zarr
+    from ome_zarr_models.v04.image import Image as NgffImage
 
     out, levels, _ = converted
-    nodes = list(Reader(parse_url(str(out)))())
-    multiscale = nodes[0]
-    assert len(multiscale.data) == n_levels
-    assert tuple(multiscale.data[0].shape) == levels[0].shape
+    assert n_levels > 1 and len(channel_names) > 1
+
+    model = NgffImage.from_zarr(zarr.open_group(str(out), mode="r"))
+    multiscale = model.attributes.multiscales[0]
+
+    assert [dataset.path for dataset in multiscale.datasets] == [
+        str(i) for i in range(n_levels)
+    ]
+    assert [axis.name for axis in multiscale.axes] == ["c", "y", "x"]
+
+    # What the form promises and NGFF does not require: a store whose
+    # channels have no label is valid NGFF and useless here.
+    assert [channel.label for channel in model.attributes.omero.channels] == list(
+        channel_names
+    )
+    scale = multiscale.datasets[0].coordinateTransformations[0].scale
+    assert scale[-1] == pytest.approx(pixel_size_um)
