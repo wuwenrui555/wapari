@@ -105,9 +105,11 @@ The reader accepts NGFF 0.4 and 0.5. `image.py` looks for `attrs["ome"]` first a
 
 `napari-ome-zarr` goes. Nothing in `src/wapari/` imports it, and what it provides is the drag-and-drop path this replaces.
 
-`ome-zarr` moves to the dev group. Its only use is `tests/test_convert.py`, reading our output with the NGFF reference implementation. That test is the one assertion in the suite that we did not write: everything else compares our writer against our reader, both built from one reading of the spec, so a misreading passes every one of them and still produces a file nobody else can use. Measured for this change, `ome-zarr` 0.18.0 reads both 0.4 and 0.5 stores and returns the full pyramid, so the test survives the migration.
+`ome-zarr` is replaced by `ome-zarr-models` in the dev group. Both are third-party opinions about our output, which is the point: everything else in the suite compares our writer against our reader, both built from one reading of the spec, so a misreading passes every test and still produces a file nobody else can use. `ome-zarr` only reads, and `tests/test_convert.py` only asked it for the level count and the shape of level 0. `ome-zarr-models` models NGFF as pydantic types and rejects a store that is merely readable, which is the stronger question.
 
-The test is strengthened while it is being moved. It currently asserts the level count and the shape of level 0; it should also assert that a third party finds the channel names and the pixel size, since those are what the form promises and what a crop lost when nobody was checking.
+It earned the swap before any of this was written: run against a store built from `docs/intermediate-form.md` as that document then stood, it rejected it, because NGFF 0.5 requires `dimension_names` on every array and the document had not said so.
+
+It stays in the dev group rather than becoming a dependency, because conformance is a property of the writer rather than of the data. A writer emits the right keys or it does not, and one fixture with more than one level and more than one channel settles it; re-checking on every conversion would buy nothing and would pass `pydantic<2.13` and `python<3.14` on to everyone who installs wapari. What does go in every write is the channel-name check, which is data-dependent and which `ome-zarr-models` explicitly does not make: a store whose channels have no `label` is valid NGFF.
 
 `README.md` explains the Python floor by `napari-ome-zarr` and `ome-zarr` needing zarr 3, which stops being the reason.
 
