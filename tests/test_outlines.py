@@ -139,3 +139,44 @@ def test_visibility_is_a_plain_bool(labels):
     assert type(viewer.layers["outlines"].visible) is bool
     viewer.camera.zoom = np.float64(2.0)
     assert type(viewer.layers["outlines"].visible) is bool
+
+
+def test_hiding_the_layer_by_hand_survives_a_zoom(labels):
+    """Auto-hide may hide, never show. Turning outlines off and then
+    zooming used to turn them back on, because the callback wrote
+    visibility unconditionally."""
+    viewer = ViewerModel()
+    layer = add_outlines(viewer, labels, min_size=8, cell_diameter=16)
+    viewer.camera.zoom = 2.0
+    layer.visible = False  # the user turns them off
+    viewer.camera.zoom = 3.0  # still legible
+    assert not layer.visible
+    viewer.camera.zoom = 1.5
+    assert not layer.visible
+
+
+def test_hiding_by_hand_survives_zooming_out_and_back(labels):
+    viewer = ViewerModel()
+    layer = add_outlines(viewer, labels, min_size=8, cell_diameter=16)
+    layer.visible = False
+    viewer.camera.zoom = 0.01  # illegible
+    viewer.camera.zoom = 2.0  # legible again
+    assert not layer.visible
+
+
+def test_showing_the_layer_by_hand_is_respected(labels):
+    viewer = ViewerModel()
+    layer = add_outlines(viewer, labels, min_size=8, cell_diameter=16)
+    layer.visible = False
+    layer.visible = True  # the user turns them back on
+    viewer.camera.zoom = 2.0
+    assert layer.visible
+
+
+def test_auto_hide_still_hides_a_layer_the_user_left_on(labels):
+    viewer = ViewerModel()
+    layer = add_outlines(viewer, labels, min_size=8, cell_diameter=16)
+    viewer.camera.zoom = 2.0
+    assert layer.visible
+    viewer.camera.zoom = 0.01
+    assert not layer.visible

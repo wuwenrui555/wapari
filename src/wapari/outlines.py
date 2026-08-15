@@ -140,15 +140,32 @@ def add_outlines(
 
 
 def _hide_when_illegible(viewer, layer, cell_size_in_world: float) -> None:
-    """Hide the layer while a cell covers too few screen pixels."""
+    """Hide the layer while a cell covers too few screen pixels.
+
+    Only hides. Writing visibility on every zoom would take the checkbox
+    away from the user: turning the outlines off and then zooming used to
+    turn them straight back on.
+    """
     threshold = MIN_CELL_PIXELS / max(cell_size_in_world, 1e-9)
+    state = {"wanted": layer.visible, "ours": False}
+
+    def on_visible(event=None) -> None:
+        if not state["ours"]:
+            state["wanted"] = bool(layer.visible)
 
     def on_zoom(event=None) -> None:
         if layer not in viewer.layers:
             return
-        # bool(), not the numpy scalar the comparison yields: Qt
-        # rejects numpy.bool with a TypeError from setEnabled.
-        layer.visible = bool(viewer.camera.zoom >= threshold)
+        # bool(), not the numpy scalar the comparison yields: Qt rejects
+        # numpy.bool with a TypeError from setEnabled.
+        should = state["wanted"] and bool(viewer.camera.zoom >= threshold)
+        if should != layer.visible:
+            state["ours"] = True
+            try:
+                layer.visible = should
+            finally:
+                state["ours"] = False
 
+    layer.events.visible.connect(on_visible)
     viewer.camera.events.zoom.connect(on_zoom)
     on_zoom()
