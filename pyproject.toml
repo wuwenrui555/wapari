@@ -40,6 +40,3 @@ dev = [
     "napari-mcp>=0.1.0",
     "pytest>=9.1.1",
 ]
-
-[tool.ruff.lint.per-file-ignores]
-"demo.py" = ["E402"]  # notebook-style script with %% cells
