@@ -121,6 +121,22 @@ ImportError: cannot import name 'FSStore' from 'zarr.storage'
 
 The message names zarr, so the reflex is to change the zarr pin, which makes it worse. Check the Python version first.
 
+## Automatic layer behaviour has to leave the checkbox working
+
+Anything that sets `layer.visible` from an event takes that control away from the user unless it is written carefully. Turning the outlines off and then zooming turned them back on, because the zoom callback wrote visibility unconditionally.
+
+The rule that works: an automatic behaviour may act while the user has not expressed a preference, and must not overrule one they have. Record the last explicit choice, and let the automatic rule only narrow it.
+
+Distinguishing the two is the part that bites. A callback's own write emits the same `visible` event a click does, so without a marker around it the automatic hide is recorded as the user wanting the layer hidden, and it never comes back:
+
+```python
+state = {"wanted": layer.visible, "ours": False}
+
+def on_visible(event=None):
+    if not state["ours"]:
+        state["wanted"] = bool(layer.visible)
+```
+
 ## AF_UNIX socket paths are short
 
 The operating system caps them at 104 bytes on macOS and 108 on Linux, and reports only `OSError: AF_UNIX path too long`. A path inside a deep project directory, or a pytest `tmp_path`, can exceed it.
