@@ -45,6 +45,10 @@ Answered from the file's own metadata, without opening a viewer.
 
 Streams every pyramid level into a chunked OME-Zarr, preserves channel names, pixel size and the original vendor metadata, and verifies the result pixel-by-pixel before saying it worked. Worth doing when you will read the data many times; not worth doing to look at a slide once.
 
+## The intermediate form
+
+Everything that enters the pipeline is converted to one form first, an OME-Zarr laid out so that a consumer needing two channels and a consumer needing all forty-five each read only what they ask for. [`docs/intermediate-form.md`](docs/intermediate-form.md) says where every piece of metadata lives, and carries a reader short enough to paste into a script that has only zarr and numpy.
+
 ## Where does a new file go?
 
 Two tests settle it. Both must agree; when they disagree, the work is probably two things that should be split.
