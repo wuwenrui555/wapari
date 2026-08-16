@@ -30,6 +30,8 @@ GAP_PX = 6.0
 LINE_PX = 1.5
 CROSSHAIR_SUFFIX = " +"
 MAX_STATS = 1 << 20  # a million samples is plenty for a minimum and a maximum
+STATS_TILES = 4  # windows per axis when a plane is too big to read whole
+STATS_TILE = 256
 
 
 def crosshair(
@@ -78,11 +80,22 @@ def _stats(data: Any) -> np.ndarray:
     subsample whatever is left.
     """
     level = data[-1] if isinstance(data, list | tuple) else data
-    array = np.asarray(level)
-    if array.size > MAX_STATS:
-        step = int(np.ceil(np.sqrt(array.size / MAX_STATS)))
-        array = array[::step, ::step]
-    return array
+    shape = tuple(level.shape)
+    if int(np.prod(shape)) <= MAX_STATS:
+        return np.asarray(level)
+
+    # A strided read would still touch every chunk, so take a few windows
+    # instead: enough of the field to bracket it, few enough chunks to be quick.
+    side = min(STATS_TILE, *shape)
+    rows = np.linspace(0, shape[0] - side, STATS_TILES, dtype=int)
+    columns = np.linspace(0, shape[1] - side, STATS_TILES, dtype=int)
+    return np.concatenate(
+        [
+            np.asarray(level[y : y + side, x : x + side]).ravel()
+            for y in rows
+            for x in columns
+        ]
+    )
 
 
 def _limits(contrast, column: str, planes: Sequence[np.ndarray]):

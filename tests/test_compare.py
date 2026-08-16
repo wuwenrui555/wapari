@@ -195,3 +195,15 @@ def test_contrast_limits_come_from_the_coarsest_level_of_a_pyramid():
     )
 
     assert level0.reads == 0
+
+
+def test_a_large_single_scale_source_is_sampled_rather_than_read_whole():
+    """A one-level source has no coarse level to fall back on, so the sample has
+    to come from a handful of windows: materialising the plane to find a minimum
+    and a maximum is what made building a panel take twenty seconds."""
+    big = _CountingArray(np.zeros((4096, 4096), np.uint16))
+    viewer = ViewerModel()
+
+    show_comparison(viewer, {"CD8": {"raw": big}})
+
+    assert 0 < big.reads <= 32
