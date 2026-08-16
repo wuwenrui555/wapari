@@ -334,18 +334,23 @@ def test_stop_removes_the_socket_file(sock_dir):
 def test_a_dead_servers_socket_is_replaced(sock_dir):
     """A crashed run leaves a socket file that nothing is listening on.
 
-    Process death closes every descriptor, releasing the lock along with
-    the socket, so the simulation has to drop both.
+    Bind and close rather than starting a server and dismantling it: process
+    death takes the accept thread with it, and a live thread blocked in
+    ``accept()`` keeps the listening socket alive on Linux even after another
+    thread closes the descriptor, so the dismantled server still answers a
+    probe there and the simulation stops resembling a crash.
     """
-    first = bridge.CommandServer({}, sock_dir / "napari.sock")
-    first.start()
-    first._sock.close()
-    os.close(first._lock_fd)
-    first._lock_fd = None
-    second = bridge.CommandServer({}, sock_dir / "napari.sock")
+    path = sock_dir / "napari.sock"
+    stale = socket.socket(socket.AF_UNIX)
+    stale.bind(str(path))
+    stale.close()
+    assert path.is_socket() and not bridge.is_serving(path)
+
+    second = bridge.CommandServer({}, path)
     second.start()
     try:
         assert second.socket_path.is_socket()
+        assert bridge.is_serving(path)
     finally:
         second.stop()
 
