@@ -29,7 +29,8 @@ ARM_PX = 26.0
 GAP_PX = 6.0
 LINE_PX = 1.5
 CROSSHAIR_SUFFIX = " +"
-MAX_STATS = 1 << 20  # a million samples is plenty for a minimum and a maximum
+MAX_STATS = 1 << 20  # a million samples is plenty to read a percentile off
+LOW_PERCENTILE, HIGH_PERCENTILE = 1.0, 99.5
 STATS_TILES = 4  # windows per axis when a plane is too big to read whole
 STATS_TILE = 256
 
@@ -105,8 +106,10 @@ def _limits(contrast, column: str, planes: Sequence[np.ndarray]):
             return tuple(float(v) for v in explicit)
     if contrast == "each":
         return None
-    lo = min(float(np.min(p)) for p in planes)
-    hi = max(float(np.max(p)) for p in planes)
+    # percentiles, not the extremes: a few hot pixels would otherwise set the
+    # range and leave the tissue black
+    lo = min(float(np.percentile(p, LOW_PERCENTILE)) for p in planes)
+    hi = max(float(np.percentile(p, HIGH_PERCENTILE)) for p in planes)
     return (lo, hi if hi > lo else lo + 1.0)
 
 

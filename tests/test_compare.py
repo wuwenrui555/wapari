@@ -207,3 +207,18 @@ def test_a_large_single_scale_source_is_sampled_rather_than_read_whole():
     show_comparison(viewer, {"CD8": {"raw": big}})
 
     assert 0 < big.reads <= 32
+
+
+def test_contrast_limits_ignore_a_bright_outlier():
+    """A handful of hot pixels must not set the display range.
+
+    Taking the minimum and maximum of the plane lets one outlier stretch the
+    limits until the tissue is black, which is what a percentile is for.
+    """
+    plane = _ramp((64, 64))
+    plane[0, 0] = 60000  # a single hot pixel, far above everything else
+    viewer = ViewerModel()
+
+    show_comparison(viewer, {"CD8": {"raw": plane}})
+
+    assert viewer.layers["CD8 raw"].contrast_limits[1] < 10000
