@@ -17,6 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # picker.py imports QtWidgets at module level, so pytest cannot even
+      # collect its tests without the libraries PyQt6 links against. The
+      # runner image ships none of them.
+      - name: Install the system libraries PyQt6 needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -28,6 +37,10 @@ jobs:
         run: uv sync --python ${{ matrix.python-version }}
 
       - name: Run tests
+        # no display on the runner; the tests build no widgets, but Qt still
+        # wants a platform plugin the moment it is imported
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: uv run --python ${{ matrix.python-version }} pytest tests/ -v
 
   lint:
