@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from napari.components import ViewerModel
 
-from wapari.pixel_values import DEFAULT_COLUMN, read_values
+from wapari.pixel_values import DEFAULT_COLUMN, BlockCache, read_values
 
 
 def _ramp(shape=(8, 8)):
@@ -136,3 +136,64 @@ def test_a_position_inside_a_pixel_reads_that_pixel(position):
     viewer.add_image(_ramp(), name="probe")
 
     assert read_values(viewer, position).values[("probe", DEFAULT_COLUMN)] == 305
+
+
+class _CountingArray:
+    """Wraps an array and counts how many times a slice is taken from it."""
+
+    def __init__(self, data):
+        self._data = data
+        self.reads = 0
+        self.shape = data.shape
+        self.dtype = data.dtype
+        self.ndim = data.ndim
+
+    def __getitem__(self, key):
+        self.reads += 1
+        return self._data[key]
+
+    def __array__(self, dtype=None, copy=None):
+        return np.asarray(self._data, dtype=dtype)
+
+
+def test_a_cache_returns_the_same_values_as_no_cache():
+    viewer = ViewerModel()
+    viewer.add_image(_ramp(), name="probe")
+    cache = BlockCache(block=4)
+
+    for position in [(3, 5), (0, 0), (7, 7), (3, 5)]:
+        assert (
+            read_values(viewer, position, cache=cache).values[("probe", DEFAULT_COLUMN)]
+            == read_values(viewer, position).values[("probe", DEFAULT_COLUMN)]
+        )
+
+
+def test_a_cache_fetches_once_per_block():
+    """The point of the cache: a chunked store charges as much for one pixel as
+    for a whole block, so the block is what should be paid for."""
+    counting = _CountingArray(_ramp())
+    viewer = ViewerModel()
+    viewer.add_image(counting, name="probe")
+    cache = BlockCache(block=4)
+    counting.reads = 0  # napari reads the array itself while building the layer
+
+    for x in range(4):  # four positions inside the same 4 x 4 block
+        read_values(viewer, (1, x), cache=cache)
+    assert counting.reads == 1
+
+    read_values(viewer, (1, 6))  # uncached, and in a different block
+    read_values(viewer, (1, 6), cache=cache)
+    assert counting.reads == 3
+
+
+def test_a_cache_keeps_layers_apart():
+    left, right = _CountingArray(_ramp()), _CountingArray(_ramp() + 1)
+    viewer = ViewerModel()
+    viewer.add_image(left, name="left")
+    viewer.add_image(right, name="right")
+    cache = BlockCache(block=4)
+
+    table = read_values(viewer, (3, 5), cache=cache)
+
+    assert table.values[("left", DEFAULT_COLUMN)] == 305
+    assert table.values[("right", DEFAULT_COLUMN)] == 306

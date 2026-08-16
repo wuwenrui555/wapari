@@ -26,6 +26,37 @@ import numpy as np
 from napari.layers import Image
 
 DEFAULT_COLUMN = "value"
+BLOCK = 512
+
+
+class BlockCache:
+    """Serves point reads out of the last blocks fetched.
+
+    A chunked store charges the same for one pixel as for the chunk holding it:
+    on a 2048 x 2048 OME-Zarr chunk a single point costs about 4 ms, and so does
+    a 512 x 512 block. Paying once per block instead of once per pixel is what
+    keeps a cursor readout responsive over a pyramid.
+
+    The cached block keeps a reference to the array it came from, so an id is
+    never reused for a different array while its entry is alive.
+    """
+
+    def __init__(self, block: int = BLOCK, keep: int = 16):
+        self.block = block
+        self._keep = keep
+        self._blocks: dict[tuple, tuple[Any, np.ndarray]] = {}
+
+    def read(self, plane, index: np.ndarray) -> Any:
+        corner = (index // self.block) * self.block
+        key = (id(plane), *corner)
+        entry = self._blocks.get(key)
+        if entry is None:
+            window = tuple(slice(c, c + self.block) for c in corner)
+            if len(self._blocks) >= self._keep:
+                self._blocks.pop(next(iter(self._blocks)))
+            entry = (plane, np.asarray(plane[window]))
+            self._blocks[key] = entry
+        return entry[1][tuple(index - corner)].item()
 
 
 @dataclass(frozen=True)
@@ -47,17 +78,19 @@ def _labels(layer) -> tuple[str, str]:
     return label.get("row", layer.name), label.get("column", DEFAULT_COLUMN)
 
 
-def _value_at(layer, position) -> Any:
+def _value_at(layer, position, cache: BlockCache | None) -> Any:
     """The layer's own value at a world position, at full resolution."""
     index = np.round(np.asarray(layer.world_to_data(position))).astype(int)
     plane = layer.data[0] if layer.multiscale else layer.data
     shape = np.asarray(plane.shape)
     if index.size != shape.size or np.any(index < 0) or np.any(index >= shape):
         return None
+    if cache is not None:
+        return cache.read(plane, index)
     return np.asarray(plane[tuple(index)]).item()
 
 
-def read_values(viewer, position) -> ValueTable:
+def read_values(viewer, position, cache: BlockCache | None = None) -> ValueTable:
     """Read every visible image layer at ``position``, given in world coordinates.
 
     Parameters
@@ -67,6 +100,9 @@ def read_values(viewer, position) -> ValueTable:
     position : sequence of float
         A world-coordinate position, such as ``event.position`` from a mouse
         callback or ``viewer.cursor.position``.
+    cache : BlockCache, optional
+        Reuse one across calls to avoid re-reading a chunked store for every
+        pixel. Without it each read goes straight to the array.
     """
     rows: list[str] = []
     columns: list[str] = []
@@ -79,7 +115,7 @@ def read_values(viewer, position) -> ValueTable:
             rows.append(row)
         if column not in columns:
             columns.append(column)
-        read[(row, column)] = _value_at(layer, position)
+        read[(row, column)] = _value_at(layer, position, cache)
 
     values = {(r, c): read.get((r, c)) for r in rows for c in columns}
     return ValueTable(tuple(rows), tuple(columns), values)
