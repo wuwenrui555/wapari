@@ -30,7 +30,7 @@ GAP_PX = 6.0
 LINE_PX = 1.5
 CROSSHAIR_SUFFIX = " +"
 MAX_STATS = 1 << 20  # a million samples is plenty to read a percentile off
-LOW_PERCENTILE, HIGH_PERCENTILE = 1.0, 99.5
+LOW_PERCENTILE, HIGH_PERCENTILE = 1.0, 99.0
 STATS_TILES = 4  # windows per axis when a plane is too big to read whole
 STATS_TILE = 256
 
