@@ -119,3 +119,86 @@ def read_values(viewer, position, cache: BlockCache | None = None) -> ValueTable
 
     values = {(r, c): read.get((r, c)) for r in rows for c in columns}
     return ValueTable(tuple(rows), tuple(columns), values)
+
+
+def _format(value: Any) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.4g}"
+    return str(value)
+
+
+def add_pixel_values(viewer, *, area: str = "left", name: str = "pixel values"):
+    """Dock a table showing what every visible layer reads under the cursor.
+
+    The table follows whatever is on screen: it is rebuilt whenever the set of
+    rows or columns changes, so toggling a layer, adding one, or opening a
+    comparison panel reshapes it with no further calls. Nothing needs to tell it
+    what is open.
+
+    Parameters
+    ----------
+    viewer : napari.Viewer
+        A viewer with a window; this is the one part of the module that needs Qt.
+    area : str
+        Which dock area to attach to. The default puts it under the layer list,
+        where it costs no horizontal space of its own.
+    name : str
+        Dock title, also the handle for removing it.
+
+    Returns
+    -------
+    The dock widget, so a caller that owns the session can remove it.
+    """
+    from qtpy.QtWidgets import (
+        QAbstractItemView,
+        QHeaderView,
+        QLabel,
+        QTableWidget,
+        QTableWidgetItem,
+        QVBoxLayout,
+        QWidget,
+    )
+
+    box = QWidget()
+    layout = QVBoxLayout(box)
+    layout.setContentsMargins(4, 4, 4, 4)
+    coord = QLabel("move the cursor over the canvas")
+    coord.setStyleSheet("font-family: monospace;")
+    table = QTableWidget(0, 0)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+    # every column keeps an equal share of the dock's width, whatever it is
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+    table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    layout.addWidget(coord)
+    layout.addWidget(table)
+
+    cache = BlockCache()
+    shape: dict[str, tuple] = {"rows": (), "columns": ()}
+
+    def refresh(_viewer=None, event=None) -> None:
+        position = event.position if event is not None else viewer.cursor.position
+        values = read_values(viewer, position, cache=cache)
+
+        if (values.rows, values.columns) != (shape["rows"], shape["columns"]):
+            shape.update(rows=values.rows, columns=values.columns)
+            table.clear()
+            table.setRowCount(len(values.rows))
+            table.setColumnCount(len(values.columns))
+            table.setHorizontalHeaderLabels(list(values.columns))
+            table.setVerticalHeaderLabels(list(values.rows))
+            for r in range(len(values.rows)):
+                for c in range(len(values.columns)):
+                    table.setItem(r, c, QTableWidgetItem("-"))
+
+        coord.setText("  ".join(f"{axis:.0f}" for axis in position))
+        for r, row in enumerate(values.rows):
+            for c, column in enumerate(values.columns):
+                table.item(r, c).setText(_format(values.values[(row, column)]))
+
+    viewer.mouse_move_callbacks.append(refresh)
+    dock = viewer.window.add_dock_widget(box, name=name, area=area)
+    dock.pixel_values_refresh = refresh  # so a caller can unhook it again
+    return dock
